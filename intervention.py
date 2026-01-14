@@ -3,9 +3,9 @@ import numpy as np
 from pathlib import Path
 from excel_formatter import ExcelFormatter
 
-class PivotGenerator:
+class InterventionGenerator:
     """
-    Automates creation of pivot tables for printer quality intervention analysis.
+    Automates creation of pivot tables for printer quality Intervention analysis.
     Creates two pivot tables: one grouped by Media Name, another by Unit.
     """
     
@@ -44,7 +44,7 @@ class PivotGenerator:
         
         # Creates a list of column names to group by
         # These are "filter combinations" - rows with the same values in these 3 columns will be combined
-        groupby_cols = ['Media Type', 'Print Mode', 'Media Name']
+        groupby_cols = ['Test Condition', 'Input_Tray', 'Media Type', 'Print Mode', 'Media Name']
         
         # Aggregation rules: when grouping, sum up all the Tpages values
         agg_dict = {'Tpages': 'sum'}
@@ -61,28 +61,36 @@ class PivotGenerator:
         # dropna=False means keep rows even if they have missing values
         pivot = self.raw_data.groupby(groupby_cols, dropna=False).agg(agg_dict).reset_index()
         
-        pivot['Sum of NP/K'] = (pivot[[col for col in error_columns['NP'] if col in pivot.columns]].sum(axis=1) / pivot['Tpages']) * 1000
-        pivot['Sum of MP/K'] = (pivot[[col for col in error_columns['MP'] if col in pivot.columns]].sum(axis=1) / pivot['Tpages']) * 1000
-        pivot['Sum of TP/K'] = (pivot[[col for col in error_columns['TP'] if col in pivot.columns]].sum(axis=1) / pivot['Tpages']) * 1000
-        pivot['Sum of PJ/K'] = (pivot[[col for col in error_columns['PJ'] if col in pivot.columns]].sum(axis=1) / pivot['Tpages']) * 1000
-        pivot['Sum of PS/K'] = (pivot[[col for col in error_columns['PS'] if col in pivot.columns]].sum(axis=1) / pivot['Tpages']) * 1000
+        pivot['Sum of NP/K'] = (pivot[[col for col in error_columns['NP'] if col in pivot.columns]].sum(axis=1) 
+                                / pivot['Tpages']) * 1000
+        pivot['Sum of MP/K'] = (pivot[[col for col in error_columns['MP'] if col in pivot.columns]].sum(axis=1) 
+                                / pivot['Tpages']) * 1000
+        pivot['Sum of TP/K'] = (pivot[[col for col in error_columns['TP'] if col in pivot.columns]].sum(axis=1) 
+                                / pivot['Tpages']) * 1000
+        pivot['Sum of PJ/K'] = (pivot[[col for col in error_columns['PJ'] if col in pivot.columns]].sum(axis=1) 
+                                / pivot['Tpages']) * 1000
+        pivot['Sum of PS/K'] = (pivot[[col for col in error_columns['PS'] if col in pivot.columns]].sum(axis=1) 
+                                / pivot['Tpages']) * 1000
         
-        pivot['Sum of Total intervention'] = (
+        pivot['Sum of Total Intervention'] = (
             pivot['Sum of NP/K'] + 
             pivot['Sum of MP/K'] + 
             pivot['Sum of TP/K'] + 
             pivot['Sum of PJ/K'] + 
             pivot['Sum of PS/K']
         )
+
+        pivot['Result'] = pivot.apply(lambda row: 'Pass' if row['Sum of Total Intervention'] < 
+                                         self.get_spec_for_media_type(row['Media Type']) else 'Fail', axis=1)
         
         final_cols = [
-            'Media Type', 'Print Mode', 'Media Name', 'Tpages',
+            'Test Condition', 'Input_Tray', 'Media Type', 'Print Mode', 'Media Name', 'Tpages',
             'Sum of NP/K', 'Sum of MP/K', 'Sum of TP/K', 
-            'Sum of PJ/K', 'Sum of PS/K', 'Sum of Total intervention'
+            'Sum of PJ/K', 'Sum of PS/K', 'Sum of Total Intervention', 'Result'
         ]
         
         pivot = pivot[final_cols]
-        pivot = self.add_grand_totals(pivot, groupby_cols[:2])
+        pivot = self.add_grand_totals(pivot, groupby_cols[:4])
         
         return pivot
     
@@ -92,7 +100,7 @@ class PivotGenerator:
         """
         error_columns = self.identify_error_columns()
         
-        groupby_cols = ['Media Type', 'Print Mode', 'Unit']
+        groupby_cols = ['Test Condition', 'Input_Tray','Media Type', 'Print Mode', 'Unit']
         
         agg_dict = {'Tpages': 'sum'}
         
@@ -103,13 +111,18 @@ class PivotGenerator:
         
         pivot = self.raw_data.groupby(groupby_cols, dropna=False).agg(agg_dict).reset_index()
         
-        pivot['Sum of NP/K'] = (pivot[[col for col in error_columns['NP'] if col in pivot.columns]].sum(axis=1) / pivot['Tpages']) * 1000
-        pivot['Sum of MP/K'] = (pivot[[col for col in error_columns['MP'] if col in pivot.columns]].sum(axis=1) / pivot['Tpages']) * 1000
-        pivot['Sum of TP/K'] = (pivot[[col for col in error_columns['TP'] if col in pivot.columns]].sum(axis=1) / pivot['Tpages']) * 1000
-        pivot['Sum of PJ/K'] = (pivot[[col for col in error_columns['PJ'] if col in pivot.columns]].sum(axis=1) / pivot['Tpages']) * 1000
-        pivot['Sum of PS/K'] = (pivot[[col for col in error_columns['PS'] if col in pivot.columns]].sum(axis=1) / pivot['Tpages']) * 1000
+        pivot['Sum of NP/K'] = (pivot[[col for col in error_columns['NP'] if col in pivot.columns]].sum(axis=1) 
+                                / pivot['Tpages']) * 1000
+        pivot['Sum of MP/K'] = (pivot[[col for col in error_columns['MP'] if col in pivot.columns]].sum(axis=1) 
+                                / pivot['Tpages']) * 1000
+        pivot['Sum of TP/K'] = (pivot[[col for col in error_columns['TP'] if col in pivot.columns]].sum(axis=1) 
+                                / pivot['Tpages']) * 1000
+        pivot['Sum of PJ/K'] = (pivot[[col for col in error_columns['PJ'] if col in pivot.columns]].sum(axis=1) 
+                                / pivot['Tpages']) * 1000
+        pivot['Sum of PS/K'] = (pivot[[col for col in error_columns['PS'] if col in pivot.columns]].sum(axis=1) 
+                                / pivot['Tpages']) * 1000
         
-        pivot['Sum of Total intervention'] = (
+        pivot['Sum of Total Intervention'] = (
             pivot['Sum of NP/K'] + 
             pivot['Sum of MP/K'] + 
             pivot['Sum of TP/K'] + 
@@ -117,14 +130,17 @@ class PivotGenerator:
             pivot['Sum of PS/K']
         )
         
+        pivot['Result'] = pivot.apply( lambda row: 'Pass' if row['Sum of Total Intervention'] < 
+                                         self.get_spec_for_media_type(row['Media Type']) else 'Fail', axis=1)
+
         final_cols = [
-            'Media Type', 'Print Mode', 'Unit', 'Tpages',
+            'Test Condition', 'Input_Tray', 'Media Type', 'Print Mode', 'Unit', 'Tpages',
             'Sum of NP/K', 'Sum of MP/K', 'Sum of TP/K', 
-            'Sum of PJ/K', 'Sum of PS/K', 'Sum of Total intervention'
+            'Sum of PJ/K', 'Sum of PS/K', 'Sum of Total Intervention', 'Result'
         ]
 
         pivot = pivot[final_cols]
-        pivot = self.add_grand_totals(pivot, groupby_cols[:2])
+        pivot = self.add_grand_totals(pivot, groupby_cols[:4])
 
         return pivot
     
@@ -150,11 +166,16 @@ class PivotGenerator:
             subset = df[mask].copy()
             result_rows.append(subset)
             
-            grand_total = pd.DataFrame([combo])
+            grand_total = pd.DataFrame(columns=df.columns, index=[0])
+            # Set the grouping column values
+            for col in groupby_cols:
+                grand_total[col] = combo[col]
             
             # Third grouping column (Media Name or Unit) should be empty or "Grand Total"
-            third_col = [col for col in df.columns if col not in groupby_cols and col not in ['Tpages', 'Sum of NP/K', 'Sum of MP/K', 'Sum of TP/K', 'Sum of PJ/K', 'Sum of PS/K', 'Sum of Total intervention']][0]
-            grand_total[third_col] = 'Grand Total'
+            remaining_cols = [col for col in df.columns if col not in groupby_cols and col not in 
+                              ['Tpages', 'Sum of NP/K', 'Sum of MP/K', 'Sum of TP/K', 'Sum of PJ/K', 'Sum of PS/K', 'Sum of Total Intervention', 'Result']]
+            if remaining_cols:
+                grand_total[remaining_cols[0]] = 'Grand Total'
             
             total_tpages = subset['Tpages'].sum()
             grand_total['Tpages'] = total_tpages
@@ -162,13 +183,25 @@ class PivotGenerator:
             rate_cols = ['Sum of NP/K', 'Sum of MP/K', 'Sum of TP/K', 'Sum of PJ/K', 'Sum of PS/K']
             for col in rate_cols:
                 if total_tpages > 0:
-                    grand_total[col] = (subset[col].sum() * 1000) / total_tpages
+                    weighted_sum = (subset[col] * subset['Tpages'] / 1000).sum()
+                    grand_total[col] = (weighted_sum / total_tpages) * 1000
                 else:
                     grand_total[col] = 0.0
             
-            # Total intervention
-            grand_total['Sum of Total intervention'] = (subset['Sum of Total intervention'].sum() * 1000) / total_tpages if total_tpages > 0 else 0.0
+            # Total Intervention
+            if total_tpages > 0:
+                grand_total['Sum of Total Intervention'] = (subset['Sum of Total Intervention'].sum() * 1000) / total_tpages 
+            else:
+                grand_total['Sum of Total Intervention'] = 0.0
             
+            media_type = combo['Media Type']
+            spec = self.get_spec_for_media_type(media_type)
+
+            if grand_total['Sum of Total Intervention'].iloc[0] < spec:
+                    grand_total['Result'] = 'Pass'
+            else:
+                grand_total['Result'] = 'Fail'
+
             grand_total = grand_total[df.columns]
             result_rows.append(grand_total)
         
@@ -177,6 +210,20 @@ class PivotGenerator:
         result = pd.concat(result_rows, ignore_index=True)
         
         return result
+    
+    def get_spec_for_media_type(self, media_type):
+        """
+        Get intervention spec threshold for each media type.
+        """
+        specs = {
+            'Plain': 0.58,
+            'Brochure': 5,
+            'Photo': 5,
+            'Card': 5,
+            'Envelope': 10
+        }
+        # Return spec or default to 5 if not found
+        return specs.get(media_type, 5)
     
     def generate_and_save(self, output_path='pivot_tables.xlsx'):
         """
@@ -199,7 +246,7 @@ class PivotGenerator:
                 worksheet=writer.sheets['Intervention By Media'],
                 dataframe=pivot_media_name,
                 grand_total_identifier='Grand Total',
-                bold_columns=['Sum of Total intervention']
+                bold_columns=['Sum of Total Intervention']
             )
             
             # Format Unit sheet
@@ -207,7 +254,7 @@ class PivotGenerator:
                 worksheet=writer.sheets['Intervention By Unit'],
                 dataframe=pivot_unit,
                 grand_total_identifier='Grand Total',
-                bold_columns=['Sum of Total intervention']
+                bold_columns=['Sum of Total Intervention']
             )
 
         return pivot_media_name, pivot_unit
@@ -215,6 +262,6 @@ class PivotGenerator:
 if __name__ == "__main__":
 
     raw_data_file = "Marconi Base Q2FY24.xlsx"
-    generator = PivotGenerator(raw_data_file)
+    generator = InterventionGenerator(raw_data_file)
     
-    pivot_media, pivot_unit = generator.generate_and_save("intervention_pivot_tables.xlsx")
+    pivot_media, pivot_unit = generator.generate_and_save("Intervention_pivot_tables.xlsx")

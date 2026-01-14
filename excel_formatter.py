@@ -29,15 +29,14 @@ class ExcelFormatter:
             data_start_row: First row of data (default: 2)
         """
         
-        # Format header row
         self._format_header_row(worksheet, dataframe, header_row)
         
-        # Enable autofilter on the header row
         self._enable_filters(worksheet)
         
-        # Format Grand Total rows and bold columns
         self._format_data_rows(worksheet, dataframe, grand_total_identifier, 
                               bold_columns, data_start_row)
+        
+        self._format_Result_column(worksheet, dataframe)
         
         self.auto_adjust_column_widths(worksheet, dataframe)
 
@@ -77,10 +76,9 @@ class ExcelFormatter:
         num_rows = len(dataframe)
         for row_num in range(data_start_row, num_rows + data_start_row):
             # Check if this is a Grand Total row
-            # Check the third column (Media Name or Unit typically)
-            third_col_value = worksheet.cell(row=row_num, column=3).value
-            
-            is_grand_total = (third_col_value == grand_total_identifier)
+            # Check the 5th column (Media Name or Unit typically)
+            fifth_col_value = worksheet.cell(row=row_num, column=5).value
+            is_grand_total = (fifth_col_value == grand_total_identifier)
             
             if is_grand_total:
                 # Format entire Grand Total row with blue background and white bold text
@@ -94,7 +92,7 @@ class ExcelFormatter:
                     cell = worksheet.cell(row=row_num, column=col_idx)
                     cell.font = self.bold_font
     
-    def auto_adjust_column_widths(self, worksheet, dataframe, min_width=8, max_width=40):
+    def auto_adjust_column_widths(self, worksheet, dataframe, min_width=8, max_width=20):
         """
         Auto-adjust column widths based on content.
         """
@@ -113,3 +111,29 @@ class ExcelFormatter:
             # Set width with constraints
             adjusted_width = min(max(max_length + 2, min_width), max_width)
             worksheet.column_dimensions[column_letter].width = adjusted_width
+
+    def _format_Result_column(self, worksheet, dataframe):
+        """
+        Color Pass/Fail column cells: green for Pass, red for Fail.
+        """
+        # Define colors
+        green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+        red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+
+        # Find Pass/Fail column index
+        pass_fail_col_idx = None
+        for col_num, col_name in enumerate(dataframe.columns, start=1):
+            if col_name == 'Result':
+                pass_fail_col_idx = col_num
+                break
+
+        if pass_fail_col_idx is None:
+            return
+
+        # Color each cell based on Pass/Fail value
+        for row_num in range(2, len(dataframe) + 2):
+            cell = worksheet.cell(row=row_num, column=pass_fail_col_idx)
+            if cell.value == 'Pass':
+                cell.fill = green_fill
+            elif cell.value == 'Fail':
+                cell.fill = red_fill
