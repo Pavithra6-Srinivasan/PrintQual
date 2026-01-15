@@ -72,16 +72,24 @@ class ExcelFormatter:
                     # +1 because Excel columns are 1-indexed
                     bold_col_indices.append(list(dataframe.columns).index(col_name) + 1)
         
+        # Find which column contains Media Name or Unit (the one with Grand Total)
+        grand_total_col_idx = None
+        for col_name in ['Media Name', 'Unit']:
+            if col_name in dataframe.columns:
+                grand_total_col_idx = list(dataframe.columns).index(col_name) + 1
+                break
+        
         # Loop through all data rows
         num_rows = len(dataframe)
         for row_num in range(data_start_row, num_rows + data_start_row):
-            # Check if this is a Grand Total row
-            # Check the 5th column (Media Name or Unit typically)
-            fifth_col_value = worksheet.cell(row=row_num, column=5).value
-            is_grand_total = (fifth_col_value == grand_total_identifier)
+            # Check if this is a Grand Total row by checking the correct column
+            is_grand_total = False
+            if grand_total_col_idx:
+                cell_value = worksheet.cell(row=row_num, column=grand_total_col_idx).value
+                is_grand_total = (cell_value == grand_total_identifier)
             
             if is_grand_total:
-                # Format entire Grand Total row with blue background and white bold text
+                # Format entire Grand Total row with orange background and white bold text
                 for col_num in range(1, len(dataframe.columns) + 1):
                     cell = worksheet.cell(row=row_num, column=col_num)
                     cell.fill = self.orange_fill
