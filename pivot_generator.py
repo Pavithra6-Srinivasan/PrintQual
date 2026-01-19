@@ -1,7 +1,5 @@
 """
-unified_pivot_generator.py
-
-Unified pivot table generator that handles all test categories.
+Pivot table generator that handles all test categories.
 Supports both direct column mapping and column summing.
 """
 

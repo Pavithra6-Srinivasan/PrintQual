@@ -1,7 +1,4 @@
 """
-test_category_config.py
-
-Configuration for all test categories.
 Each test category defines its error columns and how to process them.
 """
 
@@ -79,8 +76,8 @@ INTERVENTION_CONFIG = TestCategoryConfig(
     total_column_name="Sum of Total Intervention"
 )
 
-OUTPUT_SPILLAGE_CONFIG = TestCategoryConfig(
-    name="Output Spillage",
+SOFT_ERROR_CONFIG = TestCategoryConfig(
+    name="Soft Error",
     error_column_config={
         'Messy Output': 'Messy Output',
         'Fallen Sheet': 'Fallen Sheet',
@@ -92,27 +89,7 @@ OUTPUT_SPILLAGE_CONFIG = TestCategoryConfig(
         'Paper not Fully Eject': 'Paper not Fully Eject',
         'Paper Curl': 'Paper Curl',
         'Paper Rolled Up': 'Paper Rolled Up',
-        'False Output Tray Full': 'False Output Tray Full'
-    },
-    threshold_specs={
-        'Plain': {
-            'Simplex': 5,
-            'Duplex': 10
-        },
-        'Brochure': {
-            'Simplex': 5,
-            'Duplex': 10
-        },
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 5
-    },
-    total_column_name="Sum of Total Output Spillage"
-)
-
-SOFT_ERROR_CONFIG = TestCategoryConfig(
-    name="Soft Error",
-    error_column_config={
+        'False Output Tray Full': 'False Output Tray Full',
         'Tear_S1': 'Tear_S1',
         'Tear_S2': 'Tear_S2',
         'Dent_S1': 'Dent_S1',
@@ -187,8 +164,14 @@ SOFT_ERROR_CONFIG = TestCategoryConfig(
         'Obvious Skew_S2': 'Obvious Skew_S2'
     },
     threshold_specs={
-        'Plain': 5,
-        'Brochure': 5,
+        'Plain': {
+            'Simplex': 5,
+            'Duplex': 10
+        },
+        'Brochure': {
+            'Simplex': 5,
+            'Duplex': 10
+        },
         'Photo': 5,
         'Card': 5,
         'Envelope': 5
@@ -358,7 +341,6 @@ PQ_CONFIG = TestCategoryConfig(
 # List of all test categories to process
 ALL_TEST_CATEGORIES = [
     INTERVENTION_CONFIG,
-    OUTPUT_SPILLAGE_CONFIG,
     SOFT_ERROR_CONFIG,
     SKEW_CONFIG,
     OTHER_DEFECTS_CONFIG,

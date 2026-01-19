@@ -5,7 +5,7 @@ Master script to generate all pivot tables in a single Excel file.
 """
 
 import pandas as pd
-from unified_pivot_generator import UnifiedPivotGenerator
+from pivot_generator import UnifiedPivotGenerator
 from excel_formatter import ExcelFormatter
 from test_category_config import ALL_TEST_CATEGORIES
 
