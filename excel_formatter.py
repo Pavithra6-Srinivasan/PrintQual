@@ -18,7 +18,7 @@ class ExcelFormatter:
         self.bold_font = Font(bold=True)
     
     def apply_standard_formatting(self, worksheet, dataframe, grand_total_identifier='Grand Total', 
-                                   bold_columns=None, header_row=1, data_start_row=2):
+                                   bold_columns=None, header_row=1, data_start_row=2, highlight_threshold=0.0):
         """
         Args:
             worksheet: openpyxl worksheet object
@@ -37,6 +37,9 @@ class ExcelFormatter:
                               bold_columns, data_start_row)
         
         self._format_Result_column(worksheet, dataframe)
+
+        self._highlight_high_error_cells(worksheet, dataframe, highlight_threshold, 
+                                        grand_total_identifier, data_start_row)
         
         self.auto_adjust_column_widths(worksheet, dataframe)
 
@@ -145,3 +148,48 @@ class ExcelFormatter:
                 cell.fill = green_fill
             elif cell.value == 'Fail':
                 cell.fill = red_fill
+
+    def _highlight_high_error_cells(self, worksheet, dataframe, threshold, 
+                                    grand_total_identifier, data_start_row):
+        """
+        Highlight individual error cells (per-K columns) that exceed the threshold.
+        This helps identify which specific error types are contributing most to failures.
+        """
+        # Define highlight color (light red/pink for warnings)
+        highlight_fill = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")
+        
+        # Find which column contains Media Name or Unit (to check for Grand Total)
+        grand_total_col_idx = None
+        for col_name in ['Media Name', 'Unit']:
+            if col_name in dataframe.columns:
+                grand_total_col_idx = list(dataframe.columns).index(col_name) + 1
+                break
+        
+        # Find all per-K columns (but exclude the total sum column)
+        per_k_columns = []
+        for col_num, col_name in enumerate(dataframe.columns, start=1):
+            # Check if it's a per-K column but NOT the total sum column
+            if '/K' in str(col_name) and not any(keyword in str(col_name) for keyword in 
+                ['Sum of Total', 'Total']):
+                per_k_columns.append(col_num)
+        
+        # Highlight cells that exceed threshold
+        num_rows = len(dataframe)
+        for row_num in range(data_start_row, num_rows + data_start_row):
+            # Skip Grand Total rows
+            is_grand_total = False
+            if grand_total_col_idx:
+                cell_value = worksheet.cell(row=row_num, column=grand_total_col_idx).value
+                is_grand_total = (cell_value == grand_total_identifier)
+            
+            if not is_grand_total:
+                # Check each per-K column
+                for col_num in per_k_columns:
+                    cell = worksheet.cell(row=row_num, column=col_num)
+                    try:
+                        value = float(cell.value) if cell.value is not None else 0.0
+                        if value > threshold:
+                            cell.fill = highlight_fill
+                    except (ValueError, TypeError):
+                        # Skip if cell value is not a number
+                        pass

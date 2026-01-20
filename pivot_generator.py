@@ -8,12 +8,46 @@ import numpy as np
 from pathlib import Path
 from excel_formatter import ExcelFormatter
 
+def find_header_row(file_path, required_columns=None, max_search_rows=20):
+    
+    # Read the file without assuming any header position
+    try:
+        df_test = pd.read_excel(file_path, header=None, nrows=max_search_rows)
+    except Exception as e:
+        print(f"Error reading Excel file: {e}")
+        return 2
+    
+    # Look for "Test Condition" column
+    for row_idx in range(min(max_search_rows, len(df_test))):
+        row_values = df_test.iloc[row_idx].astype(str).str.strip().tolist()
+        
+        # Check for "Test Condition" (case-insensitive)
+        for val in row_values:
+            if 'test condition' in val.lower():
+                print(f"✓ Header row detected at row {row_idx} (found 'Test Condition')")
+                print(f"  Sample columns: {[v for v in row_values[:10] if v not in ['', 'nan', 'None']]}")
+                return row_idx
+    
+    # If "Test Condition" not found, default to row 2
+    print(f"⚠ Warning: 'Test Condition' not found in first {max_search_rows} rows")
+    print(f"  Defaulting to row 2")
+    return 2
 
 class UnifiedPivotGenerator:
     """
     Generates pivot tables for any test category based on configuration.
     Handles both direct column mapping and column summing automatically.
     """
+    COLUMN_ALIASES = {
+        'Input_Tray': ['Input_Tray', 'Tray', 'Input Tray'],
+        'Media Type': ['Media Type'],
+        'Print Mode': ['Print Mode', 'Paper Mode'],
+        'Media Name': ['Media Name'],
+        'Test Condition': ['Test Condition'],
+        'Unit': ['Unit'],
+        'Tpages': ['Tpages', 'Tsheets Printed'],
+        'Print Quality': ['Print Quality']
+    }
     
     def __init__(self, raw_data_file, test_config):
         """
@@ -21,12 +55,35 @@ class UnifiedPivotGenerator:
             raw_data_file: Path to raw data Excel file
             test_config: TestCategoryConfig object defining the category
         """
-        self.raw_data = pd.read_excel(raw_data_file, header=2)
+        header_row = find_header_row(raw_data_file)
+        
+        self.raw_data = pd.read_excel(raw_data_file, header=header_row)
         self.config = test_config
+
+        self._standardize_column_names()
         
         # Process error columns based on config
         self._prepare_error_columns()
     
+    def _standardize_column_names(self):
+        """
+        Rename columns to standard names if they use alternative names.
+        E.g., 'Tray' -> 'Input_Tray', 'Input Tray' -> 'Input_Tray'
+        """
+        rename_map = {}
+        
+        for standard_name, aliases in self.COLUMN_ALIASES.items():
+            # Check if any alias exists in the columns
+            for alias in aliases:
+                if alias in self.raw_data.columns and alias != standard_name:
+                    rename_map[alias] = standard_name
+                    print(f"  Mapping '{alias}' → '{standard_name}'")
+                    break  # Use first match only
+        
+        if rename_map:
+            self.raw_data.rename(columns=rename_map, inplace=True)
+            print(f"✓ Standardized {len(rename_map)} column name(s)")
+
     def _prepare_error_columns(self):
         """
         Process error columns based on config.
@@ -97,7 +154,7 @@ class UnifiedPivotGenerator:
         """Create pivot table grouped by Unit."""
         groupby_cols = ['Test Condition', 'Input_Tray', 'Media Type', 'Print Mode']
         groupby_cols.extend(self.config.additional_groupby_cols)  # Add Print Quality here
-        groupby_cols.append('Media Name')
+        groupby_cols.append('Unit')
         
         # Aggregation rules
         agg_dict = {'Tpages': 'sum'}

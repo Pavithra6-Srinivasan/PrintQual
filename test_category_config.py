@@ -60,7 +60,7 @@ INTERVENTION_CONFIG = TestCategoryConfig(
     error_column_config={
         'NP': ['NP_Top', 'NP_Middle', 'NP_Bottom1', 'NP_Bottom2', 'NP_Last Page'],
         'MP': ['MP_Top', 'MP_Middle', 'MP_Bottom1', 'MP_Bottom2', 'MP_Last page', 'MMP_Top', 'MMP_Middle', 'MMP_Bottom1', 'MMP_Bottom2', 'MMP_Last page'],
-        'TP': ['TP_Top', 'TP_Middle', 'TP_Bottom1', 'TP_Bottom2', 'TP_Last Page'],
+        'TP': ['TP_Top', 'TP_Middle', 'TP_Bottom1', 'TP_Bottom2', 'TP_Last page'],
         'PJ': ['PJ_S1_Z1', 'PJ_S1_Z2', 'PJ_S1_Z3', 'PJ_S1_Z4', 'PJ_S1_Z5', 'PJ_S1_Z6', 'PJ_S1_Z7', 'PJ_S1_Z8', 'PJ_S2_Z1', 'PJ_S2_Z2', 'PJ_S2_Z3', 'PJ_S2_Z4', 'PJ_S2_Z5',
                'PJ_S2_Z6', 'PJ_S2_Z7', 'PJ_S2_Z8'],
         'PS': ['PS_S1_Z1', 'PS_S1_Z2', 'PS_S1_Z3', 'PS_S1_Z4', 'PS_S1_Z5', 'PS_S1_Z6', 'PS_S1_Z7', 'PS_S1_Z8', 'PS_S2_Z1', 'PS_S2_Z2', 'PS_S2_Z3', 'PS_S2_Z4', 
@@ -338,12 +338,217 @@ PQ_CONFIG = TestCategoryConfig(
     total_column_name="Sum of Total Output Spillage"
 )
 
-# List of all test categories to process
+# ============================================================================
+# ADF TEST CATEGORY DEFINITIONS
+# ============================================================================
+
+ADF_INTERVENTION_CONFIG = TestCategoryConfig(
+    name="ADF Intervention",
+    error_column_config={
+        'ADF No Pick': ['ADF No Pick_Top (Top 5 sheets)', 'ADF No Pick_Middle', 'ADF No Pick_Bottom (Last 5 sheets)', 'ADF No Pick_ Last Sheet'],
+        'ADF Multipick': ['ADF MP_Top (Top 5 sheets)', 'ADF MP_Middle', 'ADF MP_Bottom (Last 5 sheets)', 'ADF MP_2nd Last sheets'],
+        'ADF Jam': ['ADF Jam Z1', 'ADF Jam_Z2', 'ADF Jam_Z3', 'ADF Jam_Z4', 'ADF Jam_Z5', 'ADF Jam_Z6', 'ADF Jam_Z7'],
+        'ADF Stall': ['ADF Stall_Z1', 'ADF Stall_Z2', 'ADF Stall_Z3', 'ADF Stall_Z4', 'ADF Stall_Z5', 'ADF Stall_Z6', 'ADF Stall_Z7']
+    },
+    threshold_specs={
+        'Plain': 0.58,
+        'Brochure': 5,
+        'Photo': 5,
+        'Card': 5,
+        'Envelope': 10
+    },
+    total_column_name="Sum of Total ADF Intervention"
+)
+
+ADF_SOFT_ERROR_CONFIG = TestCategoryConfig(
+    name="ADF Soft Error",
+    error_column_config={
+        'Target Dent': 'Target Dent',
+        'Target Tear': 'Target Tear',
+        'Target Peeling': 'Target Peeling',
+        'Target Scratch': 'Target Scratch',
+        'Target Corner Folding (Left)': 'Target Corner Folding (Left)',
+        'Target Corner Folding (Right)': 'Target Corner Folding (Right)',
+        'Target Edge Catch': 'Target Edge Catch',
+        'Target Roller Mark': 'Target Roller Mark',
+        'Target Folding Line (Horizontal)': 'Target Folding Line (Horizontal)',
+        'Target Folding Line (Vertical)': 'Target Folding Line (Vertical)',
+        'Target Folding Edge (Left)': 'Target Folding Edge (Left)',
+        'Target Folding Edge (Right)': 'Target Folding Edge (Right)',
+        'Target Other Damage': 'Target Other Damage',
+        'Target Pick tire marks': ['Target Pick Tire Marks_S1', 'Target Pick Tire Marks_S2', 'Target Crease'],
+        'Target Bull Dozing': 'Target Bull Dozing',
+        'Target Output Messy': 'Target Output Messy',
+        'Target Fallen Sheet': 'Target Fallen Sheet',
+        'Target Unable to Eject Fully': 'Target Unable to Eject Fully',
+        'Target Incorrect Sequence': 'Target Incorrect Sequence',
+        'Target Sucked Back': 'Target Sucked Back',
+        'MB_Margin Shift up': ['MB_Margin Shift up_S1', 'MB_Margin Shift up_S2'],
+        'MB_Margin Shift down': ['MB_Margin Shift down_S1', 'MB_Margin Shift down_S2'],
+        'MB_Margin Shift left': ['MB_Margin Shift left_S1', 'MB_Margin Shift left_S2'],
+        'MB_Margin Shift right': ['MB_Margin Shift right_S1', 'MB_Margin Shift right_S2'],
+        'NMB_Margin Shift up': ['NMB_Margin Shift up_S1', 'NMB_Margin Shift up_S2'],
+        'NMB_Margin Shift down': ['NMB_Margin Shift down_S1', 'NMB_Margin Shift down_S2'],
+        'NMB_Margin Shift left': ['NMB_Margin Shift left_S1', 'NMB_Margin Shift left_S2'],
+        'NMB_Margin Shift right': ['NMB_Margin Shift right_S1', 'NMB_Margin Shift right_S2'],
+        'Obvious Image Skew': ['Obvious Image Skew_S1', 'Obvious Image Skew_S2'],
+        'Wavy Line': ['Wavy Line_S1', 'Wavy Line_S2'],
+        'ADF TOF Drag': ['ADF TOF Drag_S1', 'ADF TOF Drag_S2'],
+        'ADF Bottom Drag': ['ADF Bottom Drag_S1', 'ADF Bottom Drag_S2'],
+        'FB TOF Drag_S1': 'FB TOF Drag_S1',
+        'FB Bottom Drag_S1': 'FB Bottom Drag_S1'
+    },
+    threshold_specs={
+        'Plain': 5,
+        'Brochure': 5,
+        'Photo': 5,
+        'Card': 5,
+        'Envelope': 5
+    },
+    total_column_name="Sum of Total ADF Soft Error"
+)
+
+ADF_IMAGE_QUALITY_CONFIG = TestCategoryConfig(
+    name="ADF Image Quality",
+    error_column_config={
+        '1 Vertical Line': ['1 Vertical Line_S1', '1 Vertical Line_S2'],
+        'Multiple Vertical Lines': ['Multiple Vertical Lines_S1', 'Multiple Vertical Lines_S2'],
+        '1 Vertical Streak': ['1 Vertical Streak_S1', '1 Vertical Streak_S2'],
+        'Multiple Vertical Streaks': ['Multiple Vertical Streaks_S1', 'Multiple Vertical Streaks_S2'],
+        '1 Vertical Broken Line': ['1 Vertical Broken Line_S1', '1 Vertical Broken Line_S2'],
+        'Additional Vertical Line': ['Additional Vertical Line_S1', 'Additional Vertical Line_S2'],
+        '1 Horizontal Line': ['1 Horizontal Line_S1', '1 Horizontal Line_S2'],
+        'Multiple Horizontal Lines': ['Multiple Horizontal Lines_S1', 'Multiple Horizontal Lines_S2'],
+        '1 Horizontal Streak': ['1 Horizontal Streak_S1', '1 Horizontal Streak_S2'],
+        'Multiple Horizontal Streaks': ['Multiple Horizontal Streaks_S1', 'Multiple Horizontal Streaks_S2'],
+        'Horizontal Broken Line': ['Horizontal Broken Line_S1', 'Horizontal Broken Line_S2'],
+        'Multiple Horizontal Broken Lines': ['Multiple Horizontal Broken Lines_S1', 'Multiple Horizontal Broken Lines_S2'],
+        'Additional Horizontal Line On BOF': 'Additional Horizontal Line On BOF',
+        'Blank Page Scan Image': 'Blank Page Scan Image',
+        'Corrupted Scan Image': 'Corrupted Scan Image',
+        'Partial Scan Image': 'Partial Scan Image',
+        '0KB images': '0KB images',
+        'Missing Images': 'Missing Images',
+        'Job Auto Cancel': 'Job Auto Cancel',
+        'Shadow on Scan Image': ['Shadow on Scan Image_S1', 'Shadow on Scan Image_S2'],
+        'Color Swopped': ['Color Swopped_S1', 'Color Swopped_S2'],
+        'Background Image': ['Background Image_S1', 'Background Image_S2'],
+        'Text Slanted': ['Text Slanted_S1', 'Text Slanted_S2'],
+        'White Vertical Line_S1': 'White Vertical Line_S1',
+        'White Vertical Line_S2': 'White Vertical Line_S2',
+        'Image Distort BOF': ['Image Distort BOF', 'Image Crop BOF'],
+        'Image Distort TOF': ['Image Distort TOF', 'Image Crop TOF']
+    },
+    threshold_specs={
+        'Plain': 5,
+        'Brochure': 5,
+        'Photo': 5,
+        'Card': 5,
+        'Envelope': 5
+    },
+    total_column_name="Sum of Total ADF Image Quality"
+)
+
+ADF_OTHER_ISSUE_CONFIG = TestCategoryConfig(
+    name="ADF Other Issue",
+    error_column_config={
+        'False Detection': 'False Detection',
+        'False DFJ': 'False DFJ',
+        'Scanner Failure': 'Scanner Failure',
+        'Scanner Stall': 'Scanner Stall',
+        'Fit to Page Failure': 'Fit to Page Failure',
+        'Unable to Scan': 'Unable to Scan',
+        'Start Stop Defect': 'Start Stop Defect',
+        'Printer Hang': 'Printer Hang',
+        'Auto Shut Down': 'Auto Shut Down',
+        'Auto Restart': 'Auto Restart',
+        'Auto Cancel': 'Auto Cancel',
+        'Scanner_Abnormal Noise': 'Scanner_Abnormal Noise',
+        'Target Duplex Failed': 'Target Duplex Failed',
+        'Double Image': ['Double Image_S1', 'Double Image_S2'],
+        'Image Distort': ['Image Distort_S1', 'Image Distort_S2'],
+        'Wrong Text Size': 'Wrong Text Size',
+        'Line Cut Off': ['Line Cut Off_S1', 'Line Cut Off_S2'],
+        'Abnormal Image Color': 'Abnormal Image Color',
+        'Dark Scan': 'Dark Scan',
+        'ADF Late Pick': 'ADF Late Pick',
+        'ADF Sensor not Working': 'ADF Sensor not Working',
+        'ADF Unresponsive': 'ADF Unresponsive',
+        'Horizontal Target Edge Image': 'Horizontal Target Edge Image',
+        'Dust Under Glass and Cannot Clean': 'Dust Under Glass and Cannot Clean',
+        'Image Not Transfer': 'Image Not Transfer',
+        'Page Split': 'Page Split',
+        'Data Corrupted': 'Data Corrupted',
+        'extra blank page': 'extra blank page',
+        'Scanner Unresponsive': 'Scanner Unresponsive',
+        'False TOF Detection': 'False TOF Detection',
+        'ADF Hand Off_Z1': 'ADF Hand Off_Z1',
+        'ADF Hand Off_Z2': 'ADF Hand Off_Z2',
+        'ADF Hand Off_Z3': 'ADF Hand Off_Z3',
+        'ADF Hand Off_Z4': 'ADF Hand Off_Z4',
+        'ADF Hand Off_Z5': 'ADF Hand Off_Z5',
+        'ADF Hand Off_S1': 'ADF Hand Off_S1',
+        'ADF Hand Off_S2': 'ADF Hand Off_S2',
+        'Black Bar_S1': 'Black Bar_S1',
+        'Black Bar_S2': 'Black Bar_S2',
+        'Top Black Bar_S1': 'Top Black Bar_S1',
+        'Top Black Bar_S2': 'Top Black Bar_S2'
+    },
+    threshold_specs={
+        'Plain': 5,
+        'Brochure': 5,
+        'Photo': 5,
+        'Card': 5,
+        'Envelope': 5
+    },
+    total_column_name="Sum of Total ADF Other Issue"
+)
+
+ADF_SKEW_CONFIG = TestCategoryConfig(
+    name="ADF Skew",
+    error_column_config={
+        'Obvious COPY TOP skew (>20)_Copy _S1': 'Obvious COPY TOP skew (>20)_Copy _S1',
+        'Obvious COPY TOP skew (<20)_Copy _S1': 'Obvious COPY TOP skew (<20)_Copy _S1',
+        'Obvious COPY TOP skew (<-20)_Copy _S1': 'Obvious COPY TOP skew (<-20)_Copy _S1',
+        'Obvious COPY TOP skew (<10)_Copy _S1': 'Obvious COPY TOP skew (<10)_Copy _S1',
+        'Obvious COPY TOP skew (<-10)_Copy _S1': 'Obvious COPY TOP skew (<-10)_Copy _S1',
+        'Obvious COPY SIDE skew (>20)_Copy _S1': 'Obvious COPY SIDE skew (>20)_Copy _S1',
+        'Obvious COPY SIDE skew (<20)_Copy _S1': 'Obvious COPY SIDE skew (<20)_Copy _S1',
+        'Obvious COPY SIDE skew (<-20)_Copy _S1': 'Obvious COPY SIDE skew (<-20)_Copy _S1',
+        'Obvious COPY SIDE skew (<10)_Copy _S1': 'Obvious COPY SIDE skew (<10)_Copy _S1',
+        'Obvious COPY SIDE skew (<-10)_Copy _S1': 'Obvious COPY SIDE skew (<-10)_Copy _S1',
+        'Obvious COPY FEED skew (>10)_Copy _S1': 'Obvious COPY FEED skew (>10)_Copy _S1',
+        'Obvious COPY FEED skew (<10)_Copy _S1': 'Obvious COPY FEED skew (<10)_Copy _S1',
+        'Obvious COPY FEED skew (<-10)_Copy _S1': 'Obvious COPY FEED skew (<-10)_Copy _S1'
+    },
+    threshold_specs={
+        'Plain': 5,
+        'Brochure': 5,
+        'Photo': 5,
+        'Card': 5,
+        'Envelope': 5
+    },
+    total_column_name="Sum of Total ADF Skew"
+)
+
+# ============================================================================
+# CATEGORY LISTS
+# ============================================================================
+
+# CUSLT test categories
 ALL_TEST_CATEGORIES = [
     INTERVENTION_CONFIG,
     SOFT_ERROR_CONFIG,
     SKEW_CONFIG,
     OTHER_DEFECTS_CONFIG,
     PQ_CONFIG
-    # Add more configs here as you define them
+]
+
+# ADF test categories
+ADF_TEST_CATEGORIES = [
+    ADF_INTERVENTION_CONFIG,
+    ADF_SOFT_ERROR_CONFIG,
+    ADF_IMAGE_QUALITY_CONFIG,
+    ADF_OTHER_ISSUE_CONFIG,
+    ADF_SKEW_CONFIG
 ]
