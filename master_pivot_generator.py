@@ -1,6 +1,5 @@
 """
 master_pivot_generator.py
-
 Master script to generate all pivot tables in a single Excel file.
 """
 
@@ -19,9 +18,6 @@ TEST_TYPE = "ADF"
 OUTPUT_FILE = None
 
 class MasterPivotGenerator:
-    """
-    Generates all pivot tables for all test categories in a single Excel file.
-    """
     
     def __init__(self, raw_data_file, test_type='CUSLT'):
         """
@@ -59,10 +55,6 @@ class MasterPivotGenerator:
         return self.all_pivots
     
     def save_to_excel(self, output_file="All_Pivot_Tables.xlsx"):
-        """
-        Save all pivot tables to a single Excel file with proper formatting.
-        Each test category gets 2 tabs: one for Media and one for Unit.
-        """
         if not self.all_pivots:
             self.generate_all_pivots()
         

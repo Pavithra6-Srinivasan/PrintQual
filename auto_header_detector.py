@@ -1,12 +1,9 @@
 """
 auto_header_detector.py
-
-Utility to automatically detect the header row in Excel files.
-Simple rule: If "Test Condition" is found, that's the header row.
+If "Test Condition" is found, that's the header row.
 """
 
 import pandas as pd
-
 
 def find_header_row(file_path, required_columns=None, max_search_rows=20):
     """
@@ -18,9 +15,6 @@ def find_header_row(file_path, required_columns=None, max_search_rows=20):
         required_columns: Not used - kept for compatibility
         max_search_rows: Maximum number of rows to search for headers (default: 20)
     
-    Returns:
-        int: The row number (0-indexed) where headers are found
-    
     Example:
         header_row = find_header_row("data.xlsx")
         df = pd.read_excel("data.xlsx", header=header_row)
@@ -31,7 +25,7 @@ def find_header_row(file_path, required_columns=None, max_search_rows=20):
         df_test = pd.read_excel(file_path, header=None, nrows=max_search_rows)
     except Exception as e:
         print(f"Error reading Excel file: {e}")
-        return 1
+        return 2
     
     # Look for "Test Condition" column
     for row_idx in range(min(max_search_rows, len(df_test))):
@@ -47,19 +41,12 @@ def find_header_row(file_path, required_columns=None, max_search_rows=20):
     # If "Test Condition" not found, default to row 2
     print(f"⚠ Warning: 'Test Condition' not found in first {max_search_rows} rows")
     print(f"  Defaulting to row 2")
-    return 1
+    return 2
 
 
 def load_data_with_auto_header(file_path, required_columns=None):
     """
     Convenience function to load Excel data with automatic header detection.
-    
-    Args:
-        file_path: Path to the Excel file
-        required_columns: Not used - kept for compatibility
-    
-    Returns:
-        tuple: (DataFrame, header_row_index)
     """
     header_row = find_header_row(file_path, required_columns)
     df = pd.read_excel(file_path, header=header_row)

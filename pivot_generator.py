@@ -34,10 +34,6 @@ def find_header_row(file_path, required_columns=None, max_search_rows=20):
     return 2
 
 class UnifiedPivotGenerator:
-    """
-    Generates pivot tables for any test category based on configuration.
-    Handles both direct column mapping and column summing automatically.
-    """
     COLUMN_ALIASES = {
         'Input_Tray': ['Input_Tray', 'Tray', 'Input Tray'],
         'Media Type': ['Media Type'],
