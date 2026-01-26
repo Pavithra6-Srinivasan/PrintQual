@@ -9,12 +9,12 @@ from excel_formatter import ExcelFormatter
 from test_category_config import ALL_TEST_CATEGORIES, ADF_TEST_CATEGORIES
 
 # Input file path (your raw data Excel file)
-RAW_DATA_FILE = "Moreto ADF.xlsx"
+RAW_DATA_FILE = "CUSLT/Kebin CUSLT.xlsx"
 
 # Test type: "CUSLT" or "ADF"
-TEST_TYPE = "ADF"
+TEST_TYPE = "CUSLT"
 
-# Output file name (optional - will auto-generate if left as None)
+# Optional output file name
 OUTPUT_FILE = None
 
 class MasterPivotGenerator:

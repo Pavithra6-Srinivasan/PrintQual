@@ -122,11 +122,11 @@ class UnifiedPivotGenerator:
         # Calculate per-K rate for each error column
         for col in self.error_output_columns:
             col_name = f'{col}/K'
-            pivot[col_name] = (pivot[col] / pivot['Tpages']) * 1000
+            pivot[col_name] = ((pivot[col] / pivot['Tpages']) * 1000).round(3)
         
         # Calculate total
         per_k_cols = [f'{col}/K' for col in self.error_output_columns]
-        pivot[self.config.total_column_name] = pivot[per_k_cols].sum(axis=1)
+        pivot[self.config.total_column_name] = (pivot[per_k_cols].sum(axis=1)).round(3)
         
         # Add Result column
         pivot['Result'] = pivot.apply(
@@ -163,11 +163,11 @@ class UnifiedPivotGenerator:
         # Calculate per-K rate for each error column
         for col in self.error_output_columns:
             col_name = f'{col}/K'
-            pivot[col_name] = (pivot[col] / pivot['Tpages']) * 1000
+            pivot[col_name] = ((pivot[col] / pivot['Tpages']) * 1000).round(3)
         
         # Calculate total
         per_k_cols = [f'{col}/K' for col in self.error_output_columns]
-        pivot[self.config.total_column_name] = pivot[per_k_cols].sum(axis=1)
+        pivot[self.config.total_column_name] = (pivot[per_k_cols].sum(axis=1)).round(3)
         
         # Add Result column
         pivot['Result'] = pivot.apply(
@@ -223,14 +223,14 @@ class UnifiedPivotGenerator:
             for col in per_k_cols:
                 if total_tpages > 0:
                     weighted_sum = (subset[col] * subset['Tpages'] / 1000).sum()
-                    grand_total[col] = (weighted_sum / total_tpages) * 1000
+                    grand_total[col] = ((weighted_sum / total_tpages) * 1000).round(3)
                 else:
                     grand_total[col] = 0.0
             
             # Calculate grand total for Total column
             if total_tpages > 0:
                 weighted_sum = (subset[self.config.total_column_name] * subset['Tpages'] / 1000).sum()
-                grand_total[self.config.total_column_name] = (weighted_sum / total_tpages) * 1000
+                grand_total[self.config.total_column_name] = ((weighted_sum / total_tpages) * 1000).round(3)
             else:
                 grand_total[self.config.total_column_name] = 0.0
             
@@ -238,7 +238,11 @@ class UnifiedPivotGenerator:
             media_type = combo['Media Type']
             print_mode = combo.get('Print Mode')
             spec = self.config.get_spec_for_media_type(media_type, print_mode)
-            grand_total['Result'] = 'Pass' if grand_total[self.config.total_column_name].iloc[0] < spec else 'Fail'
+            
+            if grand_total[self.config.total_column_name].iloc[0] < spec: 
+                grand_total['Result'] = 'Pass' 
+            else:
+                grand_total['Result'] = 'Fail'
 
             result_rows.append(grand_total)
         
