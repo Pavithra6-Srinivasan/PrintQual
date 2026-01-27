@@ -23,9 +23,9 @@ class TestCategoryConfig:
         self.total_column_name = total_column_name
         self.additional_groupby_cols = additional_groupby_cols or []
 
-        self._uses_print_mode = self._check_print_mode_usage()
+        self._uses_print_mode = self.check_print_mode_usage()
     
-    def _check_print_mode_usage(self):
+    def check_print_mode_usage(self):
         """Check if any threshold uses print mode (is a dict)."""
         for value in self.threshold_specs.values():
             if isinstance(value, dict):

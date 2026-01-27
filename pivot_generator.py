@@ -7,58 +7,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from excel_formatter import ExcelFormatter
-
-def find_header_row(file_path, required_columns=None, max_search_rows=20):
-    """
-    Automatically detect which row contains the column headers.
-    Rule: If "Test Condition" column is found, that row is the header.
-    """
-    
-    # Read the file without assuming any header position
-    try:
-        df_test = pd.read_excel(file_path, header=None, nrows=max_search_rows)
-    except Exception as e:
-        print(f"Error reading Excel file: {e}")
-        return 1
-    
-    key_columns = ['test condition', 'media type', 'unit']
-    
-    best_match = {'row': 1, 'score': 0}
-    
-    # Look for row with "Test Condition" AND other key columns
-    for row_idx in range(min(max_search_rows, len(df_test))):
-        row_values = df_test.iloc[row_idx].astype(str).str.strip().str.lower().tolist()
-        
-        # Count how many key columns are present
-        score = 0
-        for key_col in key_columns:
-            if any(key_col in val for val in row_values):
-                score += 1
-        
-        # Must have at least 2 out of 3 key columns to be considered
-        if score >= 2 and score > best_match['score']:
-            best_match = {'row': row_idx, 'score': score}
-    
-    # If we found a good match
-    if best_match['score'] >= 2:
-        row_values = df_test.iloc[best_match['row']].astype(str).str.strip().tolist()
-        print(f"✓ Header row detected at row {best_match['row']} (found {best_match['score']}/3 key columns)")
-        print(f"  Sample columns: {[v for v in row_values[:10] if v not in ['', 'nan', 'None']]}")
-        return best_match['row']
-    
-    # Fallback: Look for row with most column-like strings
-    for row_idx in range(min(max_search_rows, len(df_test))):
-        row_values = df_test.iloc[row_idx]
-        non_empty = [str(v).strip() for v in row_values if str(v).strip() and str(v).lower() not in ['nan', 'none']]
-        
-        # Header rows typically have many non-empty string values
-        if len(non_empty) >= 8:
-            print(f"⚠ Header row guessed at row {row_idx} ({len(non_empty)} non-empty columns)")
-            print(f"  Sample columns: {non_empty[:10]}")
-            return row_idx
-        
-    print(f"  Defaulting to row 2")
-    return 1
+from auto_header_detector import find_header_row
 
 class UnifiedPivotGenerator:
     COLUMN_ALIASES = {
@@ -83,12 +32,12 @@ class UnifiedPivotGenerator:
         self.raw_data = pd.read_excel(raw_data_file, header=header_row)
         self.config = test_config
 
-        self._standardize_column_names()
+        self.standardize_column_names()
         
         # Process error columns based on config
-        self._prepare_error_columns()
+        self.prepare_error_columns()
     
-    def _standardize_column_names(self):
+    def standardize_column_names(self):
         """
         Rename columns to standard names if they use alternative names.
         E.g., 'Tray' -> 'Input_Tray', 'Input Tray' -> 'Input_Tray'
@@ -107,7 +56,7 @@ class UnifiedPivotGenerator:
             self.raw_data.rename(columns=rename_map, inplace=True)
             print(f"✓ Standardized {len(rename_map)} column name(s)")
 
-    def _prepare_error_columns(self):
+    def prepare_error_columns(self):
         """
         Process error columns based on config.
         Handles both direct mapping and summing of multiple columns.
@@ -127,7 +76,7 @@ class UnifiedPivotGenerator:
                         available_cols.append(col_name)
                     else:
                         # Try fuzzy match (handle spacing, underscores, etc.)
-                        matched = self._find_fuzzy_column_match(col_name)
+                        matched = self.find_fuzzy_column_match(col_name)
                         if matched:
                             available_cols.append(matched)
                 
@@ -167,7 +116,7 @@ class UnifiedPivotGenerator:
         if 'Tpages' in self.processed_data.columns:
             self.processed_data['Tpages'] = pd.to_numeric(self.processed_data['Tpages'], errors='coerce').fillna(0)
     
-    def _find_fuzzy_column_match(self, target_col):
+    def find_fuzzy_column_match(self, target_col):
         """
         Find a column that closely matches the target name.
         Handles variations in spacing, underscores, and case.
@@ -245,7 +194,7 @@ class UnifiedPivotGenerator:
         # Only add grand totals if we have Media Name column (otherwise there's nothing to total)
         if has_media_name and len(groupby_cols) > 1:
             grand_total_groupby = groupby_cols[:-1]  # Exclude Media Name
-            pivot = self._add_grand_totals(pivot, grand_total_groupby)
+            pivot = self.add_grand_totals(pivot, grand_total_groupby)
         
         return pivot
     
@@ -298,11 +247,11 @@ class UnifiedPivotGenerator:
         
         pivot = pivot[final_cols]
         grand_total_groupby = groupby_cols[:-1]
-        pivot = self._add_grand_totals(pivot, grand_total_groupby)      
+        pivot = self.add_grand_totals(pivot, grand_total_groupby)      
 
         return pivot
     
-    def _add_grand_totals(self, df, groupby_cols):
+    def add_grand_totals(self, df, groupby_cols):
         """Add grand total rows for each combination of groupby_cols."""
         result_rows = []
         combinations = df[groupby_cols].drop_duplicates().reset_index(drop=True)
@@ -329,14 +278,14 @@ class UnifiedPivotGenerator:
             
             subset = df[mask].copy()
             
-            # ✅ FIX: Skip if subset is empty or has only 1 row
+            # Skip if subset is empty or has only 1 row
             if len(subset) == 0:
                 continue
             
             # Add the data rows
             result_rows.append(subset)
             
-            # ✅ FIX: Only add grand total if there are multiple rows to total
+            # Only add grand total if there are multiple rows to total
             if len(subset) <= 1:
                 continue
             

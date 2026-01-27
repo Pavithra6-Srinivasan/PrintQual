@@ -1,5 +1,5 @@
 """
-Reusable Excel formatting utilities for pivot tables.
+Reusable Excel formatting configurations for analysis file
 """
 
 from openpyxl.styles import Font, PatternFill
@@ -7,7 +7,7 @@ from openpyxl.utils import get_column_letter
 
 class ExcelFormatter:
     """
-    Handles all aesthetic formatting for Excel worksheets.
+    Handles all aesthetic formatting
     """
     
     def __init__(self):
@@ -29,22 +29,22 @@ class ExcelFormatter:
             data_start_row: First row of data (default: 2)
         """
         
-        self._format_header_row(worksheet, dataframe, header_row)
+        self.format_header_row(worksheet, dataframe, header_row)
         
-        self._enable_filters(worksheet)
+        self.enable_filters(worksheet)
         
-        self._format_data_rows(worksheet, dataframe, grand_total_identifier, 
+        self.format_data_rows(worksheet, dataframe, grand_total_identifier, 
                               bold_columns, data_start_row)
         
-        self._format_Result_column(worksheet, dataframe)
+        self.format_Result_column(worksheet, dataframe)
 
-        self._highlight_high_error_cells(worksheet, dataframe, highlight_threshold, 
+        self.highlight_high_error_cells(worksheet, dataframe, highlight_threshold, 
                                         grand_total_identifier, data_start_row)
         
         self.auto_adjust_column_widths(worksheet, dataframe)
 
     
-    def _format_header_row(self, worksheet, dataframe, header_row):
+    def format_header_row(self, worksheet, dataframe, header_row):
         """
         Format the header row with blue background and white bold text.
         """
@@ -54,17 +54,16 @@ class ExcelFormatter:
             cell.fill = self.blue_fill
             cell.font = self.white_bold_font
     
-    def _enable_filters(self, worksheet):
+    def enable_filters(self, worksheet):
         """
         Enable Excel autofilter on all columns.
         """
-
         worksheet.auto_filter.ref = worksheet.dimensions
     
-    def _format_data_rows(self, worksheet, dataframe, grand_total_identifier, 
+    def format_data_rows(self, worksheet, dataframe, grand_total_identifier, 
                          bold_columns, data_start_row):
         """
-        Format data rows including Grand Total rows and bold columns.
+        Bold column headings and format data rows including Grand Total rows
         """
 
         # Find indices of columns to bold
@@ -123,7 +122,7 @@ class ExcelFormatter:
             adjusted_width = min(max(max_length + 2, min_width), max_width)
             worksheet.column_dimensions[column_letter].width = adjusted_width
 
-    def _format_Result_column(self, worksheet, dataframe):
+    def format_Result_column(self, worksheet, dataframe):
         """
         Color Pass/Fail column cells: green for Pass, red for Fail.
         """
@@ -149,7 +148,7 @@ class ExcelFormatter:
             elif cell.value == 'Fail':
                 cell.fill = red_fill
 
-    def _highlight_high_error_cells(self, worksheet, dataframe, threshold, 
+    def highlight_high_error_cells(self, worksheet, dataframe, threshold, 
                                     grand_total_identifier, data_start_row):
         """
         Highlight individual error cells (per-K columns) that exceed the threshold.

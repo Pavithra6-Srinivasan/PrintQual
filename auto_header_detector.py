@@ -57,7 +57,6 @@ def find_header_row(file_path, required_columns=None, max_search_rows=20):
     print(f"  Defaulting to row 2")
     return 1
 
-
 def load_data_with_auto_header(file_path, required_columns=None):
     """
     Convenience function to load Excel data with automatic header detection.
