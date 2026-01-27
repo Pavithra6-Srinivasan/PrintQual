@@ -129,7 +129,7 @@ class ExcelFormatter:
         """
         # Define colors
         green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-        red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        red_fill = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")
 
         # Find Pass/Fail column index
         pass_fail_col_idx = None

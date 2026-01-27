@@ -536,7 +536,7 @@ ADF_SKEW_CONFIG = TestCategoryConfig(
 # ============================================================================
 
 # CUSLT test categories
-ALL_TEST_CATEGORIES = [
+CUSLT_TEST_CATEGORIES = [
     INTERVENTION_CONFIG,
     SOFT_ERROR_CONFIG,
     SKEW_CONFIG,
