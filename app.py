@@ -50,23 +50,12 @@ with st.sidebar:
     4. Download the results
     """)
 
-# Main content area
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    st.header("Upload Data File")
-    uploaded_file = st.file_uploader(
-        "Choose an Excel file",
-        type=['xlsx', 'xlsm', 'xls'],
-        help="Upload your raw test data in Excel format"
-    )
-
-with col2:
-    st.header("Quick Stats")
-    if uploaded_file:
-        st.metric("File Name", uploaded_file.name)
-        st.metric("File Size", f"{uploaded_file.size / 1024:.1f} KB")
-        st.metric("Test Type", test_type)
+st.header("Upload Data File")
+uploaded_file = st.file_uploader(
+    "Choose an Excel file",
+    type=['xlsx', 'xlsm', 'xls'],
+    help="Upload your raw test data in Excel format"
+)
 
 # Processing section
 if uploaded_file:
