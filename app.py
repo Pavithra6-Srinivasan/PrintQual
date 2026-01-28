@@ -17,8 +17,7 @@ from core.excel_formatter import ExcelFormatter
 
 # Page configuration
 st.set_page_config(
-    page_title="Printer Quality Dashboard",
-    page_icon="🖨️",
+    page_title="Life Test Data Analysis",
     layout="wide"
 )
 
@@ -61,7 +60,7 @@ if uploaded_file:
     st.markdown("---")
     
     # Generate button
-    if st.button("Generate Pivot Tables", type="primary", width=True):
+    if st.button("Generate", type="primary"):
         try:
             # Save uploaded file temporarily
             with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
@@ -137,7 +136,6 @@ if uploaded_file:
                 file_name=output_filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
-                width=True
             )
 
             # Show preview
