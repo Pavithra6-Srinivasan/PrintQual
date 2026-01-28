@@ -6,8 +6,8 @@ Supports both direct column mapping and column summing.
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from excel_formatter import ExcelFormatter
-from auto_header_detector import find_header_row
+from core.excel_formatter import ExcelFormatter
+from core.auto_header_detector import find_header_row
 
 class UnifiedPivotGenerator:
     COLUMN_ALIASES = {

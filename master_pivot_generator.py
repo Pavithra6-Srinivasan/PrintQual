@@ -4,9 +4,9 @@ Master script to generate all pivot tables in a single Excel file.
 """
 
 import pandas as pd
-from pivot_generator import UnifiedPivotGenerator
-from excel_formatter import ExcelFormatter
-from test_category_config import CUSLT_TEST_CATEGORIES, ADF_TEST_CATEGORIES
+from core.pivot_generator import UnifiedPivotGenerator
+from core.excel_formatter import ExcelFormatter
+from core.test_category_config import CUSLT_TEST_CATEGORIES, ADF_TEST_CATEGORIES
 
 # Input file path (your raw data Excel file)
 RAW_DATA_FILE = "CUSLT/Marconi CUSLT 1.xlsx"
