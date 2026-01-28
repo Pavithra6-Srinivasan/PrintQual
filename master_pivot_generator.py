@@ -15,7 +15,7 @@ RAW_DATA_FILE = "CUSLT/Marconi CUSLT 1.xlsx"
 TEST_TYPE = "CUSLT"
 
 # Optional output file name
-OUTPUT_FILE = None
+OUTPUT_FILE = RAW_DATA_FILE.replace(".xlsx", "_Pivots.xlsx")
 
 class MasterPivotGenerator:
     
@@ -93,12 +93,7 @@ class MasterPivotGenerator:
 
 def main():
     """Main execution function."""
-    if OUTPUT_FILE is None:
-        output_file = f"{TEST_TYPE}_Pivot_Tables.xlsx"
-    else:
-        output_file = OUTPUT_FILE
-        if not output_file.endswith('.xlsx'):
-            output_file += '.xlsx'
+    output_file = OUTPUT_FILE
     
     try:
         # Create generator

@@ -1,0 +1,16 @@
+# Core dependencies
+streamlit==1.31.0
+pandas==2.2.0
+openpyxl==3.1.2
+numpy==1.26.3
+
+# Utilities
+python-dateutil==2.8.2
+
+# Future: Database (uncomment when needed)
+# sqlalchemy==2.0.25
+# python-dotenv==1.0.0
+
+# Future: AI/LLM (uncomment when needed)
+# openai==1.12.0
+# langchain==0.1.5
