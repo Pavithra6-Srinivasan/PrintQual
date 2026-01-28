@@ -187,28 +187,3 @@ if uploaded_file:
 else:
     # Show info when no file is uploaded
     st.info("Upload a file to get started")
-    
-    # Example
-    with st.expander("What happens when you upload?"):
-        st.markdown("""
-        1. **File Validation**: We check if your file is a valid Excel file
-        2. **Header Detection**: Automatically detect where your data starts
-        3. **Pivot Generation**: Create pivot tables for all test categories
-        4. **Formatting**: Apply professional formatting to the results
-        5. **Download**: Get your formatted pivot tables instantly
-        
-        **Supported Test Types:**
-        - **CUSLT**: Intervention, Soft Error, Skew, Other Defects, PQ
-        - **ADF**: ADF Intervention, Soft Error, Image Quality, Other Issues, Skew
-        """)
-
-# Footer
-st.markdown("---")
-st.markdown(
-    """
-    <div style='text-align: center; color: gray;'>
-    Printer Quality Dashboard v1.0 | Built with Streamlit
-    </div>
-    """,
-    unsafe_allow_html=True
-)
