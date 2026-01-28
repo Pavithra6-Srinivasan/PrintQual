@@ -19,15 +19,6 @@ class ExcelFormatter:
     
     def apply_standard_formatting(self, worksheet, dataframe, grand_total_identifier='Grand Total', 
                                    bold_columns=None, header_row=1, data_start_row=2, highlight_threshold=0.0):
-        """
-        Args:
-            worksheet: openpyxl worksheet object
-            dataframe: pandas DataFrame that was written to the worksheet
-            grand_total_identifier: String to identify Grand Total rows (default: 'Grand Total')
-            bold_columns: List of column names to make bold (default: None)
-            header_row: Row number of headers (default: 1)
-            data_start_row: First row of data (default: 2)
-        """
         
         self.format_header_row(worksheet, dataframe, header_row)
         

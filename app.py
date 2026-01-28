@@ -1,7 +1,9 @@
 """
-app.py - Main Streamlit Application
+app.py - Life Test Data Analysis Dashboard
 
-Simple interface for uploading raw data files and generating pivot tables.
+Main Streamlit application for processing printer quality test data.
+Provides a web interface for uploading raw Excel data files and generating
+formatted pivot tables for CUSLT and ADF test categories.
 """
 
 import streamlit as st
@@ -11,27 +13,22 @@ import tempfile
 from datetime import datetime
 from io import BytesIO
 
+# Import modules from core for pivot generation and formatting
 from core.pivot_generator import UnifiedPivotGenerator
 from core.test_category_config import CUSLT_TEST_CATEGORIES, ADF_TEST_CATEGORIES
 from core.excel_formatter import ExcelFormatter
 
-# Page configuration
+# PAGE CONFIGURATION
 st.set_page_config(
     page_title="Life Test Data Analysis",
     layout="wide"
 )
 
-# Title
+# TITLE AND DESCRIPTION
 st.title("Life Test Data Analysis")
 st.markdown("Upload your raw test data files to generate pivot tables automatically.")
 
-def safe_sheet_name(name: str) -> str:
-    invalid_chars = ['\\', '/', '*', '?', ':', '[', ']']
-    for ch in invalid_chars:
-        name = name.replace(ch, '')
-    return name[:31]
-
-# Sidebar for settings
+# SIDEBAR FOR SETTINGS
 with st.sidebar:
     st.header("Settings")
     test_type = st.selectbox(
@@ -45,17 +42,16 @@ with st.sidebar:
     st.markdown("""
     1. Select test type (CUSLT or ADF)
     2. Upload your raw data Excel file
-    3. Click 'Generate Pivots'
+    3. Click 'Generate' to create pivot tables
     4. Download the results
     """)
 
 uploaded_file = st.file_uploader(
     "Choose an Excel file",
     type=['xlsx', 'xlsm', 'xls'],
-    help="Upload your raw test data in Excel format"
 )
 
-# Processing section
+# PROCESSING UPLOADED FILE
 if uploaded_file:
     st.markdown("---")
     
@@ -107,8 +103,8 @@ if uploaded_file:
                 for category_name, pivot_data in all_pivots.items():
                     config = pivot_data['config']
 
-                    sheet_media = safe_sheet_name(f'{category_name} Media')
-                    sheet_unit = safe_sheet_name(f'{category_name} Unit')
+                    sheet_media = f'{category_name} Media'
+                    sheet_unit = f'{category_name} Unit'
 
                     pivot_data['media'].to_excel(writer, sheet_name=sheet_media, index=False)
                     pivot_data['unit'].to_excel(writer, sheet_name=sheet_unit, index=False)

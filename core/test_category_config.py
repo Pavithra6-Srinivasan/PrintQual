@@ -1,5 +1,8 @@
 """
-Each test category defines its error columns and how to process them.
+test_category_config.py - Test Category Configuration Definitions
+
+Central configuration file defining all test categories and their error metrics
+for both CUSLT and ADF printer quality testing.
 """
 
 class TestCategoryConfig:
@@ -8,15 +11,7 @@ class TestCategoryConfig:
     """
     
     def __init__(self, name, error_column_config, threshold_specs, total_column_name, additional_groupby_cols=None):
-        """
-        Args:
-            name: Display name for the test category
-            error_column_config: Dict mapping output column names to input column specs
-                - For single column: {'Output Name': 'Raw Column Name'}
-                - For summed columns: {'Output Name': ['Col1', 'Col2', 'Col3']}
-            threshold_specs: Dict mapping media types to their thresholds
-            total_column_name: Name for the total column
-        """
+
         self.name = name
         self.error_column_config = error_column_config
         self.threshold_specs = threshold_specs
@@ -26,7 +21,9 @@ class TestCategoryConfig:
         self._uses_print_mode = self.check_print_mode_usage()
     
     def check_print_mode_usage(self):
-        """Check if any threshold uses print mode (is a dict)."""
+        """
+        Check if any threshold specification uses print mode.
+        """
         for value in self.threshold_specs.values():
             if isinstance(value, dict):
                 return True
@@ -34,7 +31,7 @@ class TestCategoryConfig:
 
     def get_spec_for_media_type(self, media_type, print_mode=None):
         """
-        Get threshold spec for media type and optionally print mode.
+        Get the Pass/Fail threshold for a specific media type and print mode.
         """
         # Get the spec for this media type (default to 5 if not found)
         spec = self.threshold_specs.get(media_type, 5)
@@ -52,7 +49,7 @@ class TestCategoryConfig:
 
 
 # ============================================================================
-# TEST CATEGORY DEFINITIONS
+# CUSLT CATEGORY DEFINITIONS
 # ============================================================================
 
 INTERVENTION_CONFIG = TestCategoryConfig(
@@ -339,7 +336,7 @@ PQ_CONFIG = TestCategoryConfig(
 )
 
 # ============================================================================
-# ADF TEST CATEGORY DEFINITIONS
+# ADF CATEGORY DEFINITIONS
 # ============================================================================
 
 ADF_INTERVENTION_CONFIG = TestCategoryConfig(
