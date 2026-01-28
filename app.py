@@ -23,7 +23,7 @@ st.set_page_config(
 )
 
 # Title
-st.title("Printer Quality Pivot Table Generator")
+st.title("Life Test Data Analysis")
 st.markdown("Upload your raw test data files to generate pivot tables automatically.")
 
 def safe_sheet_name(name: str) -> str:
@@ -50,7 +50,6 @@ with st.sidebar:
     4. Download the results
     """)
 
-st.header("Upload Data File")
 uploaded_file = st.file_uploader(
     "Choose an Excel file",
     type=['xlsx', 'xlsm', 'xls'],
@@ -62,7 +61,7 @@ if uploaded_file:
     st.markdown("---")
     
     # Generate button
-    if st.button("Generate Pivot Tables", type="primary", use_container_width=True):
+    if st.button("Generate Pivot Tables", type="primary", width=True):
         try:
             # Save uploaded file temporarily
             with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
@@ -133,12 +132,12 @@ if uploaded_file:
             output.seek(0)
 
             st.download_button(
-                label="📥 Download Pivot Tables",
+                label="Download Pivot Tables",
                 data=output,
                 file_name=output_filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
-                use_container_width=True
+                width=True
             )
 
             # Show preview
@@ -157,13 +156,13 @@ if uploaded_file:
             with tab1:
                 st.dataframe(
                     all_pivots[selected_category]['media'].head(20),
-                    use_container_width=True
+                    width=True
                 )
             
             with tab2:
                 st.dataframe(
                     all_pivots[selected_category]['unit'].head(20),
-                    use_container_width=True
+                    width=True
                 )
             
             # Clean up temp file
