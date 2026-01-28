@@ -9,6 +9,7 @@ import pandas as pd
 from pathlib import Path
 import tempfile
 from datetime import datetime
+from io import BytesIO
 
 from core.pivot_generator import UnifiedPivotGenerator
 from core.test_category_config import CUSLT_TEST_CATEGORIES, ADF_TEST_CATEGORIES
@@ -24,6 +25,12 @@ st.set_page_config(
 # Title
 st.title("Printer Quality Pivot Table Generator")
 st.markdown("Upload your raw test data files to generate pivot tables automatically.")
+
+def safe_sheet_name(name: str) -> str:
+    invalid_chars = ['\\', '/', '*', '?', ':', '[', ']']
+    for ch in invalid_chars:
+        name = name.replace(ch, '')
+    return name[:31]
 
 # Sidebar for settings
 with st.sidebar:
@@ -103,58 +110,48 @@ if uploaded_file:
             
             status_text.text("Formatting Excel file...")
             
-            # Create output file
             output_filename = f"{test_type}_Pivot_Tables_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            output_path = Path("data/outputs") / output_filename
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Write to Excel
-            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+
+            output = BytesIO()
+
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 formatter = ExcelFormatter()
-                
+
                 for category_name, pivot_data in all_pivots.items():
                     config = pivot_data['config']
-                    
-                    # Sheet names
-                    sheet_media = f'{category_name} By Media'
-                    sheet_unit = f'{category_name} By Unit'
-                    
-                    # Write to Excel
+
+                    sheet_media = safe_sheet_name(f'{category_name} Media')
+                    sheet_unit = safe_sheet_name(f'{category_name} Unit')
+
                     pivot_data['media'].to_excel(writer, sheet_name=sheet_media, index=False)
                     pivot_data['unit'].to_excel(writer, sheet_name=sheet_unit, index=False)
-                    
-                    # Apply formatting
+
                     formatter.apply_standard_formatting(
                         worksheet=writer.sheets[sheet_media],
                         dataframe=pivot_data['media'],
                         grand_total_identifier='Grand Total',
                         bold_columns=[config.total_column_name]
                     )
-                    
+
                     formatter.apply_standard_formatting(
                         worksheet=writer.sheets[sheet_unit],
                         dataframe=pivot_data['unit'],
                         grand_total_identifier='Grand Total',
                         bold_columns=[config.total_column_name]
                     )
-            
-            progress_bar.progress(1.0)
-            status_text.text("Complete!")
-            
-            # Success message
-            st.success("🎉 Pivot tables generated successfully!")
-            
-            # Download button
-            with open(output_path, 'rb') as f:
-                st.download_button(
-                    label="Download Pivot Tables",
-                    data=f,
-                    file_name=output_filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary",
-                    use_container_width=True
-                )
-            
+
+            # Move pointer to start
+            output.seek(0)
+
+            st.download_button(
+                label="📥 Download Pivot Tables",
+                data=output,
+                file_name=output_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+                use_container_width=True
+            )
+
             # Show preview
             st.markdown("---")
             st.header("Preview")
