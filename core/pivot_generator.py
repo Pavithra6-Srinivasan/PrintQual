@@ -19,13 +19,15 @@ class UnifiedPivotGenerator:
     # Mapping of standard column names to their possible variations
     # Used to handle different naming conventions across data sources
     COLUMN_ALIASES = {
+        'Test mode': ['Test mode', 'Test Mode'],
         'Input_Tray': ['Input_Tray', 'Tray', 'Input Tray'],
         'Media Type': ['Media Type'],
         'Print Mode': ['Print Mode', 'Paper Mode', 'Run Type'],
         'Media Name': ['Media Name'],
+        'Media Cat': ['Media Cat', 'Media Category'],
         'Test Condition': ['Test Condition', 'Test conditions'],
-        'Unit': ['Unit', 'unit', 'Unit#'],
-        'Tpages': ['Tpages', 'Tsheets Printed', 'Tpages Printed', 'Actual Printed Sheets', 'Actual Run Pages'],
+        'Unit': ['Unit', 'unit', 'Unit#', 'Unit No'],
+        'Tpages': ['Tpages', 'Tsheets Printed', 'Tpages Printed', 'Actual Printed Sheets', 'Actual Run Pages', 'ADF Tsheets', 'ADF TPages'],
         'Print Quality': ['Print Quality', 'Color/Quality']
     }
     
@@ -44,7 +46,7 @@ class UnifiedPivotGenerator:
         
         # Process error columns based on config
         self.prepare_error_columns()
-    
+
     def standardize_column_names(self):
         """
         Rename columns to standard names if they use alternative names.
@@ -119,7 +121,7 @@ class UnifiedPivotGenerator:
                     self.error_output_columns.append(output_col)
                 else:
                     # Try fuzzy match
-                    matched = self._find_fuzzy_column_match(input_spec)
+                    matched = self.find_fuzzy_column_match(input_spec)
                     if matched:
                         # Convert to numeric, replacing errors with 0
                         self.processed_data[output_col] = pd.to_numeric(self.raw_data[matched], errors='coerce').fillna(0)
@@ -182,12 +184,22 @@ class UnifiedPivotGenerator:
         """
 
         # Build groupby columns list dynamically based on what's available
-        groupby_cols = ['Test Condition']
+        groupby_cols = []
+        if 'Test Condition' in self.processed_data.columns:
+            groupby_cols.append('Test Condition')
+
+        if 'Test mode' in self.processed_data.columns:
+            groupby_cols.append('Test mode')
+
+        if 'Media Cat' in self.processed_data.columns:
+            groupby_cols.append('Media Cat')
 
         if 'Input_Tray' in self.processed_data.columns:
             groupby_cols.append('Input_Tray')
 
-        groupby_cols.extend(['Media Type'])
+        if 'Media Type' in self.processed_data.columns:
+            groupby_cols.append('Media Type')
+
         if 'Print Mode' in self.processed_data.columns:
             groupby_cols.append('Print Mode')
 
@@ -254,12 +266,22 @@ class UnifiedPivotGenerator:
         """
 
         # Build groupby columns (same as media pivot, but with Unit instead)
-        groupby_cols = ['Test Condition']
+        groupby_cols = []
+        if 'Test Condition' in self.processed_data.columns:
+            groupby_cols.append('Test Condition')
+
+        if 'Test mode' in self.processed_data.columns:
+            groupby_cols.append('Test mode')
+
+        if 'Media Cat' in self.processed_data.columns:
+            groupby_cols.append('Media Cat')
 
         if 'Input_Tray' in self.processed_data.columns:
             groupby_cols.append('Input_Tray')
 
-        groupby_cols.extend(['Media Type'])
+        if 'Media Type' in self.processed_data.columns:
+            groupby_cols.append('Media Type')
+
         if 'Print Mode' in self.processed_data.columns:
             groupby_cols.append('Print Mode')
 

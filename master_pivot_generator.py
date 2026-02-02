@@ -4,18 +4,18 @@ Master script to generate all pivot tables in a single Excel file.
 """
 
 import pandas as pd
-from core.pivot_generator import UnifiedPivotGenerator
+from core.pivot_generator import UnifiedPivotGenerator 
 from core.excel_formatter import ExcelFormatter
 from core.test_category_config import CUSLT_TEST_CATEGORIES, ADF_TEST_CATEGORIES
 
 # Input file path (your raw data Excel file)
-RAW_DATA_FILE = "CUSLT/Marconi CUSLT 1.xlsx"
+RAW_DATA_FILE = "ADF/Victoria ADF.xlsx"
 
 # Test type: "CUSLT" or "ADF"
-TEST_TYPE = "CUSLT"
+TEST_TYPE = "ADF"
 
 # Optional output file name
-OUTPUT_FILE = RAW_DATA_FILE.replace(".xlsx", "_Pivots.xlsx")
+OUTPUT_FILE = ""
 
 class MasterPivotGenerator:
     
@@ -54,7 +54,7 @@ class MasterPivotGenerator:
 
         return self.all_pivots
     
-    def save_to_excel(self, output_file="All_Pivot_Tables.xlsx"):
+    def save_to_excel(self, output_file="Pivot_Tables.xlsx"):
         if not self.all_pivots:
             self.generate_all_pivots()
         
@@ -92,8 +92,16 @@ class MasterPivotGenerator:
         return output_file
 
 def main():
-    """Main execution function."""
-    output_file = OUTPUT_FILE
+    """
+    Main execution function.
+    """
+
+    # Generate output filename if not specified
+    if OUTPUT_FILE:
+        output_file = OUTPUT_FILE
+    else:
+        # Auto-generate based on test type
+        output_file = f"{TEST_TYPE}_Pivot_Tables.xlsx"
     
     try:
         # Create generator
