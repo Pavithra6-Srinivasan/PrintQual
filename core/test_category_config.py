@@ -2,7 +2,7 @@
 test_category_config.py - Test Category Configuration Definitions
 
 Central configuration file defining all test categories and their error metrics
-for both CUSLT and ADF printer quality testing.
+for both Paperpath and ADF printer quality testing.
 """
 
 class TestCategoryConfig:
@@ -49,7 +49,7 @@ class TestCategoryConfig:
 
 
 # ============================================================================
-# CUSLT CATEGORY DEFINITIONS
+# Paperpath CATEGORY DEFINITIONS
 # ============================================================================
 
 INTERVENTION_CONFIG = TestCategoryConfig(
@@ -532,8 +532,8 @@ ADF_SKEW_CONFIG = TestCategoryConfig(
 # CATEGORY LISTS
 # ============================================================================
 
-# CUSLT test categories
-CUSLT_TEST_CATEGORIES = [
+# Paperpath test categories
+Paperpath_TEST_CATEGORIES = [
     INTERVENTION_CONFIG,
     SOFT_ERROR_CONFIG,
     SKEW_CONFIG,

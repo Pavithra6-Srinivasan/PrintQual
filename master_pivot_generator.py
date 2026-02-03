@@ -6,12 +6,12 @@ Master script to generate all pivot tables in a single Excel file.
 import pandas as pd
 from core.pivot_generator import UnifiedPivotGenerator 
 from core.excel_formatter import ExcelFormatter
-from core.test_category_config import CUSLT_TEST_CATEGORIES, ADF_TEST_CATEGORIES
+from core.test_category_config import Paperpath_TEST_CATEGORIES, ADF_TEST_CATEGORIES
 
 # Input file path (your raw data Excel file)
 RAW_DATA_FILE = "ADF/Victoria ADF.xlsx"
 
-# Test type: "CUSLT" or "ADF"
+# Test type: "Paperpath" or "ADF"
 TEST_TYPE = "ADF"
 
 # Optional output file name
@@ -19,7 +19,7 @@ OUTPUT_FILE = ""
 
 class MasterPivotGenerator:
     
-    def __init__(self, raw_data_file, test_type='CUSLT'):
+    def __init__(self, raw_data_file, test_type='Paperpath'):
         """
         Args:
             raw_data_file: Path to the raw data Excel file
@@ -31,7 +31,7 @@ class MasterPivotGenerator:
         if test_type == "ADF":
             self.test_categories = ADF_TEST_CATEGORIES
         else:
-            self.test_categories = CUSLT_TEST_CATEGORIES
+            self.test_categories = Paperpath_TEST_CATEGORIES
     
     def generate_all_pivots(self):
         """

@@ -3,7 +3,7 @@ app.py - Life Test Data Analysis Dashboard
 
 Main Streamlit application for processing printer quality test data.
 Provides a web interface for uploading raw Excel data files and generating
-formatted pivot tables for CUSLT and ADF test categories.
+formatted pivot tables for Paperpath and ADF test categories.
 """
 
 import streamlit as st
@@ -15,7 +15,7 @@ from io import BytesIO
 
 # Import modules from core for pivot generation and formatting
 from core.pivot_generator import UnifiedPivotGenerator
-from core.test_category_config import CUSLT_TEST_CATEGORIES, ADF_TEST_CATEGORIES
+from core.test_category_config import Paperpath_TEST_CATEGORIES, ADF_TEST_CATEGORIES, Paperpath_TEST_CATEGORIES
 from core.excel_formatter import ExcelFormatter
 
 # PAGE CONFIGURATION
@@ -33,14 +33,14 @@ with st.sidebar:
     st.header("Settings")
     test_type = st.selectbox(
         "Select Test Type",
-        ["CUSLT", "ADF"],
+        ["Paperpath", "ADF"],
         help="Choose the type of test data you're uploading"
     )
     
     st.markdown("---")
     st.markdown("### Instructions")
     st.markdown("""
-    1. Select test type (CUSLT or ADF)
+    1. Select test type (Paperpath or ADF)
     2. Upload your raw data Excel file
     3. Click 'Generate' to create pivot tables
     4. Download the results
@@ -71,7 +71,7 @@ if uploaded_file:
             if test_type == "ADF":
                 test_categories = ADF_TEST_CATEGORIES
             else:
-                test_categories = CUSLT_TEST_CATEGORIES
+                test_categories = Paperpath_TEST_CATEGORIES
             
             all_pivots = {}
             total_categories = len(test_categories)
