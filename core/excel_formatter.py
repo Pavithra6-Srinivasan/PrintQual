@@ -18,7 +18,7 @@ class ExcelFormatter:
         self.bold_font = Font(bold=True)
     
     def apply_standard_formatting(self, worksheet, dataframe, grand_total_identifier='Grand Total', 
-                                   bold_columns=None, header_row=1, data_start_row=2, highlight_threshold=None):
+                                   bold_columns=None, header_row=1, data_start_row=2, highlight_threshold=None, total_column_name=None):
         
         self.format_header_row(worksheet, dataframe, header_row)
         
@@ -31,7 +31,7 @@ class ExcelFormatter:
 
         if highlight_threshold is not None:
             self.highlight_high_error_cells(worksheet, dataframe, highlight_threshold,
-                                            grand_total_identifier, data_start_row)
+                                            grand_total_identifier, data_start_row, total_column_name=total_column_name)
         
         self.auto_adjust_column_widths(worksheet, dataframe)
 
@@ -141,7 +141,7 @@ class ExcelFormatter:
                 cell.fill = red_fill
 
     def highlight_high_error_cells(self, worksheet, dataframe, threshold, 
-                                      grand_total_identifier, data_start_row,
+                                      grand_total_identifier, data_start_row,total_column_name=None,
                                       use_relative_threshold=True):
         """
         Highlight individual error cells that contribute significantly to failures.
@@ -156,6 +156,7 @@ class ExcelFormatter:
         # Find which column contains Media Name or Unit (to check for Grand Total)
         grand_total_col_idx = None
         grand_total_col_name = None
+        
         for col_name in ['Media Name', 'Unit']:
             if col_name in dataframe.columns:
                 grand_total_col_idx = list(dataframe.columns).index(col_name) + 1
@@ -166,18 +167,17 @@ class ExcelFormatter:
         total_per_k_col_idx = None
         total_col_name = None
         
-        for col_num, col_name in enumerate(dataframe.columns, start=1):
-            col_str = str(col_name)
-            if '/K' in col_str and ('Sum of Total' in col_str or col_str.startswith('Total ')):
-                total_per_k_col_idx = col_num
-                total_col_name = col_name
-                break
+        if total_column_name not in dataframe.columns:
+            return
+
+        total_per_k_col_idx = list(dataframe.columns).index(total_column_name) + 1
+
         
         # Find all per-K columns (excluding the total sum column)
         per_k_columns = []
         for col_num, col_name in enumerate(dataframe.columns, start=1):
             col_str = str(col_name)
-            if '/K' in col_str and col_num != total_per_k_col_idx:
+            if col_str.endswith('/K') and col_num != total_per_k_col_idx:   
                 per_k_columns.append((col_num, col_name))
                 
         # Highlight cells
