@@ -15,7 +15,7 @@ from io import BytesIO
 
 # Import modules from core for pivot generation and formatting
 from core.pivot_generator import UnifiedPivotGenerator
-from core.test_category_config import Paperpath_TEST_CATEGORIES, ADF_TEST_CATEGORIES, Paperpath_TEST_CATEGORIES
+from core.Spec_Category_config import Paperpath_TEST_CATEGORIES, ADF_TEST_CATEGORIES, Paperpath_TEST_CATEGORIES
 from core.excel_formatter import ExcelFormatter
 
 # PAGE CONFIGURATION

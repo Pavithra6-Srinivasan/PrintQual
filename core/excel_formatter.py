@@ -18,7 +18,7 @@ class ExcelFormatter:
         self.bold_font = Font(bold=True)
     
     def apply_standard_formatting(self, worksheet, dataframe, grand_total_identifier='Grand Total', 
-                                   bold_columns=None, header_row=1, data_start_row=2, highlight_threshold=0.0):
+                                   bold_columns=None, header_row=1, data_start_row=2, highlight_threshold=None):
         
         self.format_header_row(worksheet, dataframe, header_row)
         
@@ -29,8 +29,9 @@ class ExcelFormatter:
         
         self.format_Result_column(worksheet, dataframe)
 
-        self.highlight_high_error_cells(worksheet, dataframe, highlight_threshold, 
-                                        grand_total_identifier, data_start_row)
+        if highlight_threshold is not None:
+            self.highlight_high_error_cells(worksheet, dataframe, highlight_threshold,
+                                            grand_total_identifier, data_start_row)
         
         self.auto_adjust_column_widths(worksheet, dataframe)
 
@@ -140,46 +141,76 @@ class ExcelFormatter:
                 cell.fill = red_fill
 
     def highlight_high_error_cells(self, worksheet, dataframe, threshold, 
-                                    grand_total_identifier, data_start_row):
+                                      grand_total_identifier, data_start_row,
+                                      use_relative_threshold=True):
         """
-        Highlight individual error cells (per-K columns) that exceed the threshold.
-        This helps identify which specific error types are contributing most to failures.
+        Highlight individual error cells that contribute significantly to failures.
+        
+        Args:
+            threshold: If use_relative_threshold=False, this is the absolute value
+            use_relative_threshold: If True, highlights cells > 50% of row total
+                                    If False, highlights cells > threshold value
         """
-        # Define highlight color (light red/pink for warnings)
         highlight_fill = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")
         
         # Find which column contains Media Name or Unit (to check for Grand Total)
         grand_total_col_idx = None
+        grand_total_col_name = None
         for col_name in ['Media Name', 'Unit']:
             if col_name in dataframe.columns:
                 grand_total_col_idx = list(dataframe.columns).index(col_name) + 1
+                grand_total_col_name = col_name
+                break
+
+        # Identify total per-K column (sum column)
+        total_per_k_col_idx = None
+        total_col_name = None
+        
+        for col_num, col_name in enumerate(dataframe.columns, start=1):
+            col_str = str(col_name)
+            if '/K' in col_str and ('Sum of Total' in col_str or col_str.startswith('Total ')):
+                total_per_k_col_idx = col_num
+                total_col_name = col_name
                 break
         
-        # Find all per-K columns (but exclude the total sum column)
+        # Find all per-K columns (excluding the total sum column)
         per_k_columns = []
         for col_num, col_name in enumerate(dataframe.columns, start=1):
-            # Check if it's a per-K column but NOT the total sum column
-            if '/K' in str(col_name) and not any(keyword in str(col_name) for keyword in 
-                ['Sum of Total', 'Total']):
-                per_k_columns.append(col_num)
+            col_str = str(col_name)
+            if '/K' in col_str and col_num != total_per_k_col_idx:
+                per_k_columns.append((col_num, col_name))
+                
+        # Highlight cells
+        highlighted_count = 0
         
-        # Highlight cells that exceed threshold
-        num_rows = len(dataframe)
-        for row_num in range(data_start_row, num_rows + data_start_row):
+        for row_num in range(data_start_row, len(dataframe) + data_start_row):
             # Skip Grand Total rows
-            is_grand_total = False
             if grand_total_col_idx:
-                cell_value = worksheet.cell(row=row_num, column=grand_total_col_idx).value
-                is_grand_total = (cell_value == grand_total_identifier)
-            
-            if not is_grand_total:
-                # Check each per-K column
-                for col_num in per_k_columns:
-                    cell = worksheet.cell(row=row_num, column=col_num)
-                    try:
-                        value = float(cell.value) if cell.value is not None else 0.0
-                        if value > threshold:
-                            cell.fill = highlight_fill
-                    except (ValueError, TypeError):
-                        # Skip if cell value is not a number
-                        pass
+                label = worksheet.cell(row=row_num, column=grand_total_col_idx).value
+                if str(label) == grand_total_identifier:
+                    continue
+
+            # Get threshold for this row
+            if use_relative_threshold:
+                try:
+                    total_cell = worksheet.cell(row=row_num, column=total_per_k_col_idx)
+                    row_total = float(total_cell.value or 0.0)
+                    if row_total <= 0:
+                        continue
+                    row_threshold = row_total * 0.5
+                except (ValueError, TypeError):
+                    continue
+            else:
+                row_threshold = threshold
+
+            # Check each error column
+            for col_num, col_name in per_k_columns:
+                cell = worksheet.cell(row=row_num, column=col_num)
+                try:
+                    value = float(cell.value or 0.0)
+                    if value > row_threshold:
+                        cell.fill = highlight_fill
+                        highlighted_count += 1
+                except (ValueError, TypeError):
+                    pass
+                    

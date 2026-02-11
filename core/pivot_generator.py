@@ -7,9 +7,10 @@ table creation with grand total calculations.
 
 import pandas as pd
 import numpy as np
-from pathlib import Path
-from core.excel_formatter import ExcelFormatter
 from core.auto_header_detector import find_header_row
+from core.spec_validator import SpecValidator
+from core.detector import standardize_column_names, prepare_error_columns
+from core.spec_detector import detect_spec_sheet
 
 class UnifiedPivotGenerator:
     """
@@ -19,148 +20,70 @@ class UnifiedPivotGenerator:
     # Mapping of standard column names to their possible variations
     # Used to handle different naming conventions across data sources
     COLUMN_ALIASES = {
+        'Test Name': ['Test Name', 'TestName', 'Test_Name'],
+        'Program & SKU': ['Program & SKU', 'Program&SKU', 'Program_SKU'],
         'Test mode': ['Test mode', 'Test Mode'],
-        'Input_Tray': ['Input_Tray', 'Tray', 'Input Tray'],
+        'Input Tray': ['Input_Tray', 'Tray', 'Input Tray'],
         'Media Type': ['Media Type'],
         'Print Mode': ['Print Mode', 'Paper Mode', 'Run Type'],
         'Media Name': ['Media Name'],
         'Media Cat': ['Media Cat', 'Media Category'],
         'Test Condition': ['Test Condition', 'Test conditions'],
         'Unit': ['Unit', 'unit', 'Unit#', 'Unit No'],
-        'Tpages': ['Tpages', 'Tsheets Printed', 'Tpages Printed', 'Actual Printed Sheets', 'Actual Run Pages', 'ADF Tsheets', 'ADF TPages'],
+        'Tpages': ['Tpages', 'Tpages Printed', 'Actual Printed Sheets', 'Actual Run Pages', 'ADF TPages'],
         'Print Quality': ['Print Quality', 'Color/Quality']
     }
     
-    def __init__(self, raw_data_file, test_config):
+    def __init__(self, raw_data_file, test_config, spec_file_path=None):
         """
         Args:
             raw_data_file: Path to raw data Excel file
             test_config: TestCategoryConfig object defining the category
+            spec_file_path: Optional path to specification file
         """
         header_row = find_header_row(raw_data_file)
-        
+
         self.raw_data = pd.read_excel(raw_data_file, header=header_row)
         self.config = test_config
-
-        self.standardize_column_names()
+        self.spec_file_path = spec_file_path
+        self.spec_validator = None
         
+        # Standardize column names using detector module
+        self.raw_data = standardize_column_names(self.raw_data, self.COLUMN_ALIASES)
+        
+        # Auto-detect spec sheet name from raw data using detector module
+        self.spec_sheet = detect_spec_sheet(self.raw_data)
+
         # Process error columns based on config
-        self.prepare_error_columns()
+        result = prepare_error_columns(self.raw_data, self.config)
 
-    def standardize_column_names(self):
-        """
-        Rename columns to standard names if they use alternative names.
-        E.g., 'Tray' -> 'Input_Tray', 'Input Tray' -> 'Input_Tray'
-        """
-        rename_map = {}
-        
-        for standard_name, aliases in self.COLUMN_ALIASES.items():
-            # Check if any alias exists in the columns
-            for alias in aliases:
-                if alias in self.raw_data.columns and alias != standard_name:
-                    rename_map[alias] = standard_name
-                    print(f"  Mapping '{alias}' → '{standard_name}'")
-                    break  # Use first match only
-        
-        if rename_map:
-            self.raw_data.rename(columns=rename_map, inplace=True)
-            print(f"✓ Standardized {len(rename_map)} column name(s)")
+        if isinstance(result, tuple) and len(result) == 2:
+            self.processed_data, self.error_output_columns = result
+        else:
+            self.processed_data = result if isinstance(result, pd.DataFrame) else pd.DataFrame()
+            self.error_output_columns = []
 
-    def prepare_error_columns(self):
-        """
-        Process error columns based on configuration.
-       
-        This method handles two types of column specifications:
-            1. Direct mapping: Single column → output column
-            2. Column summing: Multiple columns → summed output column
-
-        Column Matching:
-            - First attempts exact column name match
-            - Falls back to fuzzy matching (handles spacing/case variations)
-            - Warns if columns cannot be found
-        """
-        self.processed_data = self.raw_data.copy()
-        self.error_output_columns = []
+        # Define numeric columns for aggregation
+        self.numeric_columns = ['Tpages'] + self.error_output_columns
         
-        # Process each configured error column
-        for output_col, input_spec in self.config.error_column_config.items():
-            if isinstance(input_spec, list):
-                # CASE 1: Sum multiple columns into one output column
-                available_cols = []
-                for col_name in input_spec:
-                    # First try exact match
-                    if col_name in self.raw_data.columns:
-                        available_cols.append(col_name)
-                    else:
-                        # Try fuzzy match (handle spacing, underscores, etc.)
-                        matched = self.find_fuzzy_column_match(col_name)
-                        if matched:
-                            available_cols.append(matched)
-                
-                if available_cols:
-                    # Convert all columns to numeric, replacing errors with 0
-                    numeric_cols = []
-                    for col in available_cols:
-                        numeric_cols.append(pd.to_numeric(self.raw_data[col], errors='coerce').fillna(0))
-                    
-                    # Sum the numeric columns
-                    self.processed_data[output_col] = pd.concat(numeric_cols, axis=1).sum(axis=1)
-                    self.error_output_columns.append(output_col)
-
-                    # Warn if some columns were not found
-                    if len(available_cols) < len(input_spec):
-                        missing = len(input_spec) - len(available_cols)
-                        print(f"  ⚠ {output_col}: Found {len(available_cols)}/{len(input_spec)} columns (missing: {missing})")
-                else:
-                    print(f"  ✗ Warning: None of the columns found for {output_col}")
-            else:
-                # CASE 2: Direct column mapping (one-to-one)
-                if input_spec in self.raw_data.columns:
-                    # Convert to numeric, replacing errors with 0
-                    self.processed_data[output_col] = pd.to_numeric(self.raw_data[input_spec], errors='coerce').fillna(0)
-                    self.error_output_columns.append(output_col)
-                else:
-                    # Try fuzzy match
-                    matched = self.find_fuzzy_column_match(input_spec)
-                    if matched:
-                        # Convert to numeric, replacing errors with 0
-                        self.processed_data[output_col] = pd.to_numeric(self.raw_data[matched], errors='coerce').fillna(0)
-                        self.error_output_columns.append(output_col)
-                        print(f"  ~ Mapped '{input_spec}' → '{matched}'")
-                    else:
-                        print(f"  ✗ Warning: Column '{input_spec}' not found")
-            
-        # Ensure Tpages is also numeric
-        if 'Tpages' in self.processed_data.columns:
-            self.processed_data['Tpages'] = pd.to_numeric(self.processed_data['Tpages'], errors='coerce').fillna(0)
-    
-    def find_fuzzy_column_match(self, target_col):
-        """
-        Find a column that closely matches the target name.
+        # Process error columns based on config using detector module
+        self.processed_data, self.error_output_columns = prepare_error_columns(
+            self.raw_data,
+            self.config
+        )
         
-        Handles variations in:
-            - Spacing: 'Media Type' vs 'MediaType'
-            - Separators: 'Input_Tray' vs 'Input-Tray' vs 'Input Tray'
-            - Case: 'Unit' vs 'unit' vs 'UNIT'        
-        """
-        
-        # Normalize target: lowercase, replace separators with spaces
-        target_normalized = target_col.lower().replace('_', ' ').replace('-', ' ').strip()
-        
-        # Check each column in raw data
-        for col in self.raw_data.columns:
-            col_normalized = str(col).lower().replace('_', ' ').replace('-', ' ').strip()
-            
-            # Check for exact match after normalization
-            if target_normalized == col_normalized:
-                return col
-            
-            # Check if one contains the other (for partial matches)
-            if len(target_normalized) > 5:
-                if target_normalized in col_normalized or col_normalized in target_normalized:
-                    return col
-        
-        return None
+        # Initialize spec validator if spec file provided
+        if spec_file_path and self.spec_sheet:
+            try:
+                self.spec_validator = SpecValidator(
+                    spec_file_path=spec_file_path,
+                    sheet_name=self.spec_sheet,
+                    spec_category=self.config.name
+                )
+                print(f"✓ Spec validator initialized using sheet: {self.spec_sheet}")
+            except Exception as e:
+                print(f"⚠ Spec validator init failed: {e}")
+                self.spec_validator = None
 
     def create_pivot_by_media_name(self):
         """
@@ -214,9 +137,12 @@ class UnifiedPivotGenerator:
             has_media_name = True
         
         # Define aggregation rules: sum Tpages and all error columns
-        agg_dict = {'Tpages': 'sum'}
-        for col in self.error_output_columns:
-            agg_dict[col] = 'sum'
+        agg_dict = {col: "sum" for col in self.numeric_columns if col in self.processed_data.columns}
+
+        # Before groupby, ensure each column is a Series
+        for col in agg_dict:
+            if isinstance(self.processed_data[col], pd.DataFrame):
+                self.processed_data[col] = self.processed_data[col].squeeze()
         
         # Group and aggregate
         pivot = self.processed_data.groupby(groupby_cols, dropna=False).agg(agg_dict).reset_index()
@@ -231,17 +157,32 @@ class UnifiedPivotGenerator:
         per_k_cols = [f'{col}/K' for col in self.error_output_columns]
         pivot[self.config.total_column_name] = (pivot[per_k_cols].sum(axis=1)).round(3)
         
-        # Determine Pass/Fail based on threshold specifications
-        pivot['Result'] = pivot.apply(
-            lambda row: 'Pass' if row[self.config.total_column_name] < self.config.get_spec_for_media_type(row['Media Type'], row.get('Print Mode')) else 'Fail',
-            axis=1
-        )
-        
+        # Determine Pass/Fail based on spec file if available, otherwise use threshold specs
+        if self.spec_validator:
+            print("  Using spec file for validation...")
+            pivot['Spec Limit'] = None
+            pivot['Result'] = None
+            
+            for idx, row in pivot.iterrows():
+                spec_limit, actual_rate, result = self.spec_validator.evaluate(
+                    pivot_row=row,
+                    total_per_k_col=self.config.total_column_name
+                )
+                pivot.at[idx, 'Spec Limit'] = spec_limit
+                pivot.at[idx, 'Result'] = result
+        else:
+            # No spec file provided - cannot validate
+            print("  ⚠ No spec file provided - skipping validation")
+            pivot['Result'] = 'NO SPEC FILE'
+
         # Select final columns in desired order
         final_cols = groupby_cols.copy()
         final_cols.append('Tpages')        
         final_cols.extend(per_k_cols)
-        final_cols.extend([self.config.total_column_name, 'Result'])
+        final_cols.append(self.config.total_column_name)
+        if self.spec_validator:
+            final_cols.append('Spec Limit')
+        final_cols.append('Result')
         
         pivot = pivot[final_cols]
         
@@ -249,7 +190,7 @@ class UnifiedPivotGenerator:
         if has_media_name and len(groupby_cols) > 1:
             grand_total_groupby = groupby_cols[:-1]  # Exclude Media Name
             pivot = self.add_grand_totals(pivot, grand_total_groupby)
-        
+
         return pivot
     
     def create_pivot_by_unit(self):
@@ -293,9 +234,12 @@ class UnifiedPivotGenerator:
         groupby_cols.append('Unit')
         
         # Aggregation rules
-        agg_dict = {'Tpages': 'sum'}
-        for col in self.error_output_columns:
-            agg_dict[col] = 'sum'
+        agg_dict = {col: "sum" for col in self.numeric_columns if col in self.processed_data.columns}
+
+        # Before groupby, ensure each column is a Series
+        for col in agg_dict:
+            if isinstance(self.processed_data[col], pd.DataFrame):
+                self.processed_data[col] = self.processed_data[col].squeeze()
         
         # Group and aggregate
         pivot = self.processed_data.groupby(groupby_cols, dropna=False).agg(agg_dict).reset_index()
@@ -310,17 +254,36 @@ class UnifiedPivotGenerator:
         per_k_cols = [f'{col}/K' for col in self.error_output_columns]
         pivot[self.config.total_column_name] = (pivot[per_k_cols].sum(axis=1)).round(3)
         
-        # Determine Pass/Fail based on threshold specifications
-        pivot['Result'] = pivot.apply(
-            lambda row: 'Pass' if row[self.config.total_column_name] < self.config.get_spec_for_media_type(row['Media Type'], row.get('Print Mode')) else 'Fail',
-            axis=1
-        )   
+        # Calculate total error rate (sum of all per-K rates)
+        per_k_cols = [f'{col}/K' for col in self.error_output_columns]
+        pivot[self.config.total_column_name] = (pivot[per_k_cols].sum(axis=1)).round(3)
+        
+        # Determine Pass/Fail based on spec file if available, otherwise use threshold specs
+        if self.spec_validator:
+            print("  Using spec file for validation...")
+            pivot['Spec Limit'] = None
+            pivot['Result'] = None
+            
+            for idx, row in pivot.iterrows():
+                spec_limit, actual_rate, result = self.spec_validator.evaluate(
+                    pivot_row=row,
+                    total_per_k_col=self.config.total_column_name
+                )
+                pivot.at[idx, 'Spec Limit'] = spec_limit
+                pivot.at[idx, 'Result'] = result
+        else:
+            # No spec file provided - cannot validate
+            print("  ⚠ No spec file provided - skipping validation")
+            pivot['Result'] = 'NO SPEC FILE'
         
         # Select final columns in desired order
         final_cols = groupby_cols.copy()
         final_cols.append('Tpages')        
         final_cols.extend(per_k_cols)
-        final_cols.extend([self.config.total_column_name, 'Result'])
+        final_cols.append(self.config.total_column_name)
+        if self.spec_validator:
+            final_cols.append('Spec Limit')
+        final_cols.append('Result')
         
         pivot = pivot[final_cols]
         grand_total_groupby = groupby_cols[:-1]
@@ -408,11 +371,16 @@ class UnifiedPivotGenerator:
             else:
                 grand_total[self.config.total_column_name] = 0.0
             
-            # Determine Pass/Fail for grand total
-            media_type = combo['Media Type']
-            print_mode = combo.get('Print Mode')
-            spec = self.config.get_spec_for_media_type(media_type, print_mode)
-            grand_total['Result'] = 'Pass' if grand_total[self.config.total_column_name].iloc[0] < spec else 'Fail'
+           # Determine Pass/Fail for grand total using spec validator
+            if self.spec_validator:
+                spec_limit, actual_rate, result = self.spec_validator.evaluate(
+                    pivot_row=grand_total.iloc[0],
+                    total_per_k_col=self.config.total_column_name,
+                )
+                grand_total['Spec Limit'] = spec_limit
+                grand_total['Result'] = result
+            else:
+                grand_total['Result'] = 'NO SPEC FILE'
 
             result_rows.append(grand_total)
         

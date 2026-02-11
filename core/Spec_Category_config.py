@@ -1,58 +1,27 @@
 """
-test_category_config.py - Test Category Configuration Definitions
+Spec_Category_config.py - Test Category Configuration Definitions
 
 Central configuration file defining all test categories and their error metrics
 for both Paperpath and ADF printer quality testing.
 """
 
-class TestCategoryConfig:
+class SpecCategoryConfig:
     """
     Configuration for a single test category.
     """
     
-    def __init__(self, name, error_column_config, threshold_specs, total_column_name, additional_groupby_cols=None):
+    def __init__(self, name, error_column_config, total_column_name, additional_groupby_cols=None):
 
         self.name = name
         self.error_column_config = error_column_config
-        self.threshold_specs = threshold_specs
         self.total_column_name = total_column_name
         self.additional_groupby_cols = additional_groupby_cols or []
-
-        self._uses_print_mode = self.check_print_mode_usage()
-    
-    def check_print_mode_usage(self):
-        """
-        Check if any threshold specification uses print mode.
-        """
-        for value in self.threshold_specs.values():
-            if isinstance(value, dict):
-                return True
-        return False
-
-    def get_spec_for_media_type(self, media_type, print_mode=None):
-        """
-        Get the Pass/Fail threshold for a specific media type and print mode.
-        """
-        # Get the spec for this media type (default to 5 if not found)
-        spec = self.threshold_specs.get(media_type, 5)
-        
-        # If spec is a dict, we need print mode
-        if isinstance(spec, dict):
-            if print_mode is None:
-                # If no print mode provided, return a default
-                return 5
-            # Return the threshold for this specific print mode
-            return spec.get(print_mode, 5)
-        else:
-            # Simple number threshold
-            return spec
-
 
 # ============================================================================
 # Paperpath CATEGORY DEFINITIONS
 # ============================================================================
 
-INTERVENTION_CONFIG = TestCategoryConfig(
+INTERVENTION_CONFIG = SpecCategoryConfig(
     name="Intervention",
     error_column_config={
         'NP': ['NP_Top', 'NP_Middle', 'NP_Bottom1', 'NP_Bottom2', 'NP_Last Page'],
@@ -63,17 +32,10 @@ INTERVENTION_CONFIG = TestCategoryConfig(
         'PS': ['PS_S1_Z1', 'PS_S1_Z2', 'PS_S1_Z3', 'PS_S1_Z4', 'PS_S1_Z5', 'PS_S1_Z6', 'PS_S1_Z7', 'PS_S1_Z8', 'PS_S2_Z1', 'PS_S2_Z2', 'PS_S2_Z3', 'PS_S2_Z4', 
                'PS_S2_Z5', 'PS_S2_Z6', 'PS_S2_Z7', 'PS_S2_Z8']
     },
-    threshold_specs={
-        'Plain': 0.58,
-        'Brochure': 5,
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 10
-    },
     total_column_name="Sum of Total Intervention"
 )
 
-SOFT_ERROR_CONFIG = TestCategoryConfig(
+SOFT_ERROR_CONFIG = SpecCategoryConfig(
     name="Soft Error",
     error_column_config={
         'Messy Output': 'Messy Output',
@@ -160,23 +122,10 @@ SOFT_ERROR_CONFIG = TestCategoryConfig(
         'Obvious Skew_S1': 'Obvious Skew_S1',
         'Obvious Skew_S2': 'Obvious Skew_S2'
     },
-    threshold_specs={
-        'Plain': {
-            'Simplex': 5,
-            'Duplex': 10
-        },
-        'Brochure': {
-            'Simplex': 5,
-            'Duplex': 10
-        },
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 5
-    },
     total_column_name="Sum of Total Soft Error"
 )
 
-SKEW_CONFIG = TestCategoryConfig(
+SKEW_CONFIG = SpecCategoryConfig(
     name="Skew",
     error_column_config={
         'TOF_A>B_S1': ['TOF_A>B_S1', 'TOF_A>B_S2'],
@@ -188,18 +137,11 @@ SKEW_CONFIG = TestCategoryConfig(
         'FEED SKEW_C>D_S1': ['FEED SKEW_C>D_S1', 'FEED SKEW_C>D_S2'],
         'FEED SKEW_D>C_S1': ['FEED SKEW_D>C_S1', 'FEED SKEW_D>C_S2']
     },
-    threshold_specs={
-        'Plain': 5,
-        'Brochure': 5,
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 5
-    },
     total_column_name="Sum of Total Skew",
     additional_groupby_cols=['Print Quality']
 )
 
-OTHER_DEFECTS_CONFIG = TestCategoryConfig(
+OTHER_DEFECTS_CONFIG = SpecCategoryConfig(
     name="Other Defects",
     error_column_config={
         'Blank Page Eject': 'Blank Page Eject',
@@ -235,17 +177,10 @@ OTHER_DEFECTS_CONFIG = TestCategoryConfig(
         'Auto Power Cycle': 'Auto Power Cycle',
         'Paper out of order': 'Paper out of order'
     },
-    threshold_specs={
-        'Plain': 5,
-        'Brochure': 5,
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 5
-    },
     total_column_name="Sum of Total Other Defects"
 )
 
-PQ_CONFIG = TestCategoryConfig(
+PQ_CONFIG = SpecCategoryConfig(
     name="PQ",
     error_column_config={
         'Horizontal Light Band_Minor_S1': 'Horizontal Light Band_Minor_S1',
@@ -325,13 +260,6 @@ PQ_CONFIG = TestCategoryConfig(
         'Half Die Color Missing': 'Half Die Color Missing',
         'ImageShift_FW': 'ImageShift_FW'
     },
-    threshold_specs={
-        'Plain': 5,
-        'Brochure': 5,
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 5
-    },
     total_column_name="Sum of Total Output Spillage"
 )
 
@@ -339,7 +267,7 @@ PQ_CONFIG = TestCategoryConfig(
 # ADF CATEGORY DEFINITIONS
 # ============================================================================
 
-ADF_INTERVENTION_CONFIG = TestCategoryConfig(
+ADF_INTERVENTION_CONFIG = SpecCategoryConfig(
     name="ADF Intervention",
     error_column_config={
         'ADF No Pick': ['ADF No Pick_Top (Top 5 sheets)', 'ADF No Pick_Middle', 'ADF No Pick_Bottom (Last 5 sheets)', 'ADF No Pick_ Last Sheet'],
@@ -347,17 +275,10 @@ ADF_INTERVENTION_CONFIG = TestCategoryConfig(
         'ADF Jam': ['ADF Jam Z1', 'ADF Jam_Z2', 'ADF Jam_Z3', 'ADF Jam_Z4', 'ADF Jam_Z5', 'ADF Jam_Z6', 'ADF Jam_Z7'],
         'ADF Stall': ['ADF Stall_Z1', 'ADF Stall_Z2', 'ADF Stall_Z3', 'ADF Stall_Z4', 'ADF Stall_Z5', 'ADF Stall_Z6', 'ADF Stall_Z7']
     },
-    threshold_specs={
-        'Plain': 0.58,
-        'Brochure': 5,
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 10
-    },
     total_column_name="Sum of Total ADF Intervention"
 )
 
-ADF_SOFT_ERROR_CONFIG = TestCategoryConfig(
+ADF_SOFT_ERROR_CONFIG = SpecCategoryConfig(
     name="ADF Soft Error",
     error_column_config={
         'Target Dent': 'Target Dent',
@@ -395,17 +316,10 @@ ADF_SOFT_ERROR_CONFIG = TestCategoryConfig(
         'FB TOF Drag_S1': 'FB TOF Drag_S1',
         'FB Bottom Drag_S1': 'FB Bottom Drag_S1'
     },
-    threshold_specs={
-        'Plain': 5,
-        'Brochure': 5,
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 5
-    },
     total_column_name="Sum of Total ADF Soft Error"
 )
 
-ADF_IMAGE_QUALITY_CONFIG = TestCategoryConfig(
+ADF_IMAGE_QUALITY_CONFIG = SpecCategoryConfig(
     name="ADF Image Quality",
     error_column_config={
         '1 Vertical Line': ['1 Vertical Line_S1', '1 Vertical Line_(S1)', '1 Vertical Line_S2', '1 Vertical Line_(S2)'],
@@ -436,17 +350,10 @@ ADF_IMAGE_QUALITY_CONFIG = TestCategoryConfig(
         'Image Distort BOF': ['Image Distort BOF', 'Image Crop BOF'],
         'Image Distort TOF': ['Image Distort TOF', 'Image Crop TOF']
     },
-    threshold_specs={
-        'Plain': 5,
-        'Brochure': 5,
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 5
-    },
     total_column_name="Sum of Total ADF Image Quality"
 )
 
-ADF_OTHER_ISSUE_CONFIG = TestCategoryConfig(
+ADF_OTHER_ISSUE_CONFIG = SpecCategoryConfig(
     name="ADF Other Issue",
     error_column_config={
         'False Detection': 'False Detection',
@@ -491,17 +398,10 @@ ADF_OTHER_ISSUE_CONFIG = TestCategoryConfig(
         'Top Black Bar_S1': 'Top Black Bar_S1',
         'Top Black Bar_S2': 'Top Black Bar_S2'
     },
-    threshold_specs={
-        'Plain': 5,
-        'Brochure': 5,
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 5
-    },
     total_column_name="Sum of Total ADF Other Issue"
 )
 
-ADF_SKEW_CONFIG = TestCategoryConfig(
+ADF_SKEW_CONFIG = SpecCategoryConfig(
     name="ADF Skew",
     error_column_config={
         'Obvious COPY TOP skew (>20)_Copy _S1': 'Obvious COPY TOP skew (>20)_Copy _S1',
@@ -518,13 +418,6 @@ ADF_SKEW_CONFIG = TestCategoryConfig(
         'Obvious COPY FEED skew (<10)_Copy _S1': 'Obvious COPY FEED skew (<10)_Copy _S1',
         'Obvious COPY FEED skew (<-10)_Copy _S1': 'Obvious COPY FEED skew (<-10)_Copy _S1'
     },
-    threshold_specs={
-        'Plain': 5,
-        'Brochure': 5,
-        'Photo': 5,
-        'Card': 5,
-        'Envelope': 5
-    },
     total_column_name="Sum of Total ADF Skew"
 )
 
@@ -533,7 +426,7 @@ ADF_SKEW_CONFIG = TestCategoryConfig(
 # ============================================================================
 
 # Paperpath test categories
-Paperpath_TEST_CATEGORIES = [
+Paperpath_CATEGORIES = [
     INTERVENTION_CONFIG,
     SOFT_ERROR_CONFIG,
     SKEW_CONFIG,
@@ -542,7 +435,7 @@ Paperpath_TEST_CATEGORIES = [
 ]
 
 # ADF test categories
-ADF_TEST_CATEGORIES = [
+ADF_CATEGORIES = [
     ADF_INTERVENTION_CONFIG,
     ADF_SOFT_ERROR_CONFIG,
     ADF_IMAGE_QUALITY_CONFIG,
