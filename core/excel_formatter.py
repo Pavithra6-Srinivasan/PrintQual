@@ -145,11 +145,6 @@ class ExcelFormatter:
                                       use_relative_threshold=True):
         """
         Highlight individual error cells that contribute significantly to failures.
-        
-        Args:
-            threshold: If use_relative_threshold=False, this is the absolute value
-            use_relative_threshold: If True, highlights cells > 50% of row total
-                                    If False, highlights cells > threshold value
         """
         highlight_fill = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")
         

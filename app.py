@@ -3,18 +3,19 @@ app_local.py - Life Test Data Analysis Desktop Application
 
 Simplified local GUI with automatic spec file detection and test type auto-detection.
 """
-
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import filedialog, messagebox
 from pathlib import Path
-import pandas as pd
 from datetime import datetime
 import threading
+import urllib.parse
 
-from core.pivot_generator import UnifiedPivotGenerator
+from services.summary_service import SummaryService
+from ui_builder import create_widgets
 from core.Spec_Category_config import Paperpath_CATEGORIES, ADF_CATEGORIES
-from core.excel_formatter import ExcelFormatter
-
+from engine.database_manager import DatabaseManager
+from services.pivot_service import PivotService
+from services.storage_service import StorageService
 
 class PivotGeneratorApp:
     """Desktop GUI for generating pivot tables with auto-detection."""
@@ -32,97 +33,8 @@ class PivotGeneratorApp:
         self.spec_file_path = Path.cwd() / "spec.xlsx"
         
         # Create UI
-        self.create_widgets()
+        create_widgets(self)
         
-    def create_widgets(self):
-        """Create all UI widgets."""
-        
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
-        
-        # Title
-        title_label = ttk.Label(main_frame, text="Life Test Data Analysis", 
-                                font=('Arial', 16, 'bold'))
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
-        
-        # Raw Data File Section
-        row = 1
-        ttk.Label(main_frame, text="Raw Data File:", font=('Arial', 10, 'bold')).grid(
-            row=row, column=0, sticky=tk.W, pady=5
-        )
-        ttk.Entry(main_frame, textvariable=self.raw_data_file, width=60).grid(
-            row=row, column=1, sticky=(tk.W, tk.E), padx=5
-        )
-        ttk.Button(main_frame, text="Browse...", command=self.browse_raw_data).grid(
-            row=row, column=2, padx=5
-        )
-        
-        # Output Folder Section
-        row += 1
-        ttk.Label(main_frame, text="Output Folder:", font=('Arial', 10, 'bold')).grid(
-            row=row, column=0, sticky=tk.W, pady=5
-        )
-        ttk.Entry(main_frame, textvariable=self.output_folder, width=60).grid(
-            row=row, column=1, sticky=(tk.W, tk.E), padx=5
-        )
-        ttk.Button(main_frame, text="Browse...", command=self.browse_output_folder).grid(
-            row=row, column=2, padx=5
-        )
-        
-        # Info Label
-        row += 1
-        info_text = "• Test type will be auto-detected\n• Spec file: spec.xlsx (current folder)"
-        ttk.Label(main_frame, text=info_text, foreground="gray", 
-                 justify=tk.LEFT, font=('Arial', 9)).grid(
-            row=row, column=0, columnspan=3, pady=10, sticky=tk.W
-        )
-        
-        # Generate Button
-        row += 1
-        self.generate_btn = ttk.Button(main_frame, text="Generate Pivot Tables", 
-                                       command=self.generate_pivots)
-        self.generate_btn.grid(row=row, column=0, columnspan=3, pady=20)
-        
-        # Progress Bar
-        row += 1
-        self.progress = ttk.Progressbar(main_frame, mode='indeterminate')
-        self.progress.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
-        
-        # Status Label
-        row += 1
-        self.status_label = ttk.Label(main_frame, text="Ready", foreground="blue")
-        self.status_label.grid(row=row, column=0, columnspan=3, pady=5)
-        
-        # Log Section
-        row += 1
-        ttk.Label(main_frame, text="Log:", font=('Arial', 10, 'bold')).grid(
-            row=row, column=0, sticky=tk.W, pady=(10, 5)
-        )
-        
-        row += 1
-        self.log_text = scrolledtext.ScrolledText(main_frame, height=15, width=80, 
-                                                   wrap=tk.WORD, state='disabled')
-        self.log_text.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-        
-        main_frame.rowconfigure(row, weight=1)
-        
-        # Instructions
-        row += 1
-        instructions = """
-Instructions:
-1. Select your raw data file (Excel format)
-2. Choose output folder
-3. Click "Generate Pivot Tables"
-4. System will auto-detect test type (Paperpath/ADF)
-5. Results will be saved to output folder
-        """
-        ttk.Label(main_frame, text=instructions, justify=tk.LEFT, 
-                 foreground="gray").grid(row=row, column=0, columnspan=3, pady=10, sticky=tk.W)
-    
     def browse_raw_data(self):
         """Browse for raw data file."""
         filename = filedialog.askopenfilename(
@@ -172,102 +84,81 @@ Instructions:
         self.progress.start()
         
         # Run in thread
-        thread = threading.Thread(target=self._generate_pivots_thread, daemon=True)
+        thread = threading.Thread(target=self.generate_worker, daemon=True)
         thread.start()
     
-    def _generate_pivots_thread(self):
-        """Worker thread for generating pivots."""
+    def generate_worker(self):
         try:
             self.update_status("Starting generation...", "blue")
-            self.log("="*60)
+            self.log("=" * 60)
             self.log("GENERATING PIVOT TABLES")
-            self.log("="*60)
-            
+            self.log("=" * 60)
+
             raw_file = self.raw_data_file.get()
-            
-            # Check if spec file exists
-            if self.spec_file_path.exists():
-                spec_file = str(self.spec_file_path)
-                self.log(f"✓ Using spec file: {self.spec_file_path.name}")
-            else:
-                spec_file = None
-                self.log("⚠ Spec file not found - validation will be skipped")
-            
-            # Auto-detect test type using first Paperpath category
-            self.log("\nAuto-detecting test type...")
-            temp_gen = UnifiedPivotGenerator(raw_file, Paperpath_CATEGORIES[0], spec_file)
-            detected_sub_assembly = temp_gen.sub_assembly
-            product = temp_gen.product
-            sheet_name = temp_gen.spec_sheet
-            
-            # Choose correct test categories based on detected sub-assembly
-            if detected_sub_assembly.upper() == "ADF":
+            spec_file = str(self.spec_file_path) if self.spec_file_path.exists() else None
+
+            # Detect Test Type
+            pivot_service = PivotService(raw_file, spec_file)
+            sub_assembly, product, sheet_name = pivot_service.detect_test_type()
+
+            if sub_assembly.upper() == "ADF":
                 test_categories = ADF_CATEGORIES
-                test_type_name = "ADF"
             else:
                 test_categories = Paperpath_CATEGORIES
-                test_type_name = "Paperpath"
-            
-            self.log(f"✓ Detected Test Type: {test_type_name}")
+
+            self.log(f"✓ Detected Sub Assembly: {sub_assembly}")
             self.log(f"✓ Product: {product}")
-            self.log(f"✓ Sheet: {sheet_name}")
-            self.log(f"\nProcessing {len(test_categories)} categories...")
-            
-            all_pivots = {}
-            
-            # Generate pivots for each category
-            for idx, config in enumerate(test_categories, 1):
-                self.update_status(f"Processing {config.name}... ({idx}/{len(test_categories)})", "blue")
-                self.log(f"\n[{idx}/{len(test_categories)}] Generating: {config.name}")
-                
-                generator = UnifiedPivotGenerator(raw_file, config, spec_file)
-                pivot_media = generator.create_pivot_by_media_name()
-                pivot_unit = generator.create_pivot_by_unit()
-                
-                all_pivots[config.name] = {
-                    'media': pivot_media,
-                    'unit': pivot_unit,
-                    'config': config
-                }
-                
-                self.log(f"    ✓ Complete")
-            
-            # Save to Excel
-            self.update_status("Saving to Excel...", "blue")
-            self.log("\nSaving to Excel...")
-            
-            # Auto-generate filename like master_pivot_generator
+            self.log(f"✓ Spec Sheet: {sheet_name}")
+            self.log(f"✓ Categories: {len(test_categories)}")
+
+            # Generate All Pivots Once
+            self.update_status("Generating pivots...", "blue")
+            all_pivots = pivot_service.generate_all_pivots(test_categories)
+
+            # Save Excel
+            self.update_status("Saving Excel...", "blue")
+
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_filename = f"{product}_{sheet_name}_Pivot_{timestamp}.xlsx"
+            output_path = Path(self.output_folder.get()) / output_filename
+
+            storage = StorageService()
+            storage.save_excel(output_path, all_pivots)
+
+            self.log(f"✓ Excel saved: {output_filename}")
+
+            # Generate Summary
+            self.update_status("Generating summary...", "blue")
+
+            summary_service = SummaryService(all_pivots)
+            summary_data, summary_text = summary_service.generate()
+
+            self.log(summary_text)
+
+            # Save to Database
+            self.update_status("Saving to database...", "blue")
+
+            db = DatabaseManager(
+                host="15.46.29.115",
+                database="quality_sandbox",
+                username="pavithra_030226",
+                password = urllib.parse.quote_plus("pavithra@030226"),
+                db_type="mysql"
+            )
+
+            db.create_tables()
+            db.insert_summary(summary_data)
+
+            self.log("Summary stored in SQL database")
+
+            # Auto-generate filename
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             output_filename = f"{product}_{sheet_name}_Pivot_Tables_{timestamp}.xlsx"
             output_path = Path(self.output_folder.get()) / output_filename
             
-            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-                formatter = ExcelFormatter()
-                
-                for category_name, pivot_data in all_pivots.items():
-                    config = pivot_data['config']
-                    
-                    sheet_media = f'{category_name} By Media'
-                    sheet_unit = f'{category_name} By Unit'
-                    
-                    pivot_data['media'].to_excel(writer, sheet_name=sheet_media, index=False)
-                    pivot_data['unit'].to_excel(writer, sheet_name=sheet_unit, index=False)
-                    
-                    formatter.apply_standard_formatting(
-                        worksheet=writer.sheets[sheet_media],
-                        dataframe=pivot_data['media'],
-                        grand_total_identifier='Grand Total',
-                        bold_columns=[config.total_column_name],
-                        highlight_threshold=0.5
-                    )
-                    
-                    formatter.apply_standard_formatting(
-                        worksheet=writer.sheets[sheet_unit],
-                        dataframe=pivot_data['unit'],
-                        grand_total_identifier='Grand Total',
-                        bold_columns=[config.total_column_name],
-                        highlight_threshold=0.5
-                    )
+            storage = StorageService()
+            storage.save_excel(output_path, all_pivots)
+
             
             self.log(f"\n✓ Saved: {output_filename}")
             self.log("="*60)

@@ -17,8 +17,7 @@ class UnifiedPivotGenerator:
     Generates pivot tables for any test category based on configuration.
     """
 
-    # Mapping of standard column names to their possible variations
-    # Used to handle different naming conventions across data sources
+    # Mapping of standard column names to different naming conventions across data sources
     COLUMN_ALIASES = {
         'Test Name': ['Test Name', 'TestName', 'Test_Name', 'Test name'],
         'Program & SKU': ['Program & SKU', 'Program&SKU', 'Program_SKU'],
