@@ -3,10 +3,12 @@
 import pandas as pd
 
 class SpecValidator:
-    def __init__(self, spec_file_path, sheet_name, spec_category):
+    def __init__(self, spec_file_path, sheet_name, spec_category, product=None, sub_assembly=None):
         self.spec_file_path = spec_file_path
         self.sheet_name = sheet_name
         self.spec_category = spec_category
+        self.product = product
+        self.sub_assembly = sub_assembly
         
         self.spec_df = self.load_specs()
 
@@ -24,9 +26,17 @@ class SpecValidator:
 
     def extract_test_context(self, pivot_row):
         """Extract condition metadata from pivot row"""
+
+        context = {}
+
+        # Inject auto-detected values
+        if self.product:
+            context["Product"] = self.product.lower()
+
+        if self.sub_assembly:
+            context["Sub Assembly"] = self.sub_assembly.lower()
+
         mapping = [
-            "Product",
-            "Sub Assembly",
             "Test Condition",
             "Input Tray",
             "Print Mode",
@@ -35,7 +45,6 @@ class SpecValidator:
             "Print Quality"
         ]
 
-        context = {}
         for col in mapping:
             if col in pivot_row and pd.notna(pivot_row[col]):
                 context[col] = str(pivot_row[col]).strip().lower()

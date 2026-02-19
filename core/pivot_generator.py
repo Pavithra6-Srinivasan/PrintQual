@@ -20,7 +20,7 @@ class UnifiedPivotGenerator:
     # Mapping of standard column names to their possible variations
     # Used to handle different naming conventions across data sources
     COLUMN_ALIASES = {
-        'Test Name': ['Test Name', 'TestName', 'Test_Name'],
+        'Test Name': ['Test Name', 'TestName', 'Test_Name', 'Test name'],
         'Program & SKU': ['Program & SKU', 'Program&SKU', 'Program_SKU'],
         'Test mode': ['Test mode', 'Test Mode'],
         'Input Tray': ['Input_Tray', 'Tray', 'Input Tray'],
@@ -72,13 +72,48 @@ class UnifiedPivotGenerator:
             self.config
         )
         
+        # Auto-detect product and sub assembly from raw data
+        self.product = None
+        self.sub_assembly = None
+
+        # Detect from Test Name FIRST (more reliable)
+        if 'Test Name' in self.raw_data.columns:
+            first_test = str(self.raw_data['Test Name'].dropna().iloc[0]).lower()
+
+            if "adf" in first_test:
+                self.sub_assembly = "ADF"
+            elif "paperpath" in first_test or "cuslt" in first_test:
+                self.sub_assembly = "Paperpath"
+
+        # Fallback to Program & SKU if still None
+        if not self.sub_assembly and 'Program & SKU' in self.raw_data.columns:
+            first_sku = str(self.raw_data['Program & SKU'].dropna().iloc[0]).lower()
+
+            if "adf" in first_sku:
+                self.sub_assembly = "ADF"
+            elif "paperpath" in first_sku or "cuslt" in first_sku:
+                self.sub_assembly = "Paperpath"
+
+        if not self.sub_assembly:
+            self.sub_assembly = "Unknown"
+
+        # Detect product from Program & SKU
+        if 'Program & SKU' in self.raw_data.columns:
+            sku_series = self.raw_data['Program & SKU'].dropna().astype(str)
+            if not sku_series.empty:
+                self.product = sku_series.iloc[0].split()[0]
+                
+                print(f"[DETECTED] Sub Assembly: {self.sub_assembly}")
+
         # Initialize spec validator if spec file provided
         if spec_file_path and self.spec_sheet:
             try:
                 self.spec_validator = SpecValidator(
-                    spec_file_path=spec_file_path,
-                    sheet_name=self.spec_sheet,
-                    spec_category=self.config.name
+                spec_file_path=spec_file_path,
+                sheet_name=self.spec_sheet,
+                spec_category=self.config.name,
+                product=self.product,
+                sub_assembly=self.sub_assembly
                 )
                 print(f"✓ Spec validator initialized using sheet: {self.spec_sheet}")
             except Exception as e:
