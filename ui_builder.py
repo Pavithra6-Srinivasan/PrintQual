@@ -70,19 +70,78 @@ def create_widgets(app):
     app.status_label = ttk.Label(main_frame, text="Ready", foreground="blue")
     app.status_label.grid(row=row, column=0, columnspan=3, pady=5)
 
-    # Log Section
+    # =========================
+    # Detection Summary Section
+    # =========================
     row += 1
-    ttk.Label(main_frame, text="Log:", font=('Arial', 10, 'bold')).grid(
-        row=row, column=0, sticky=tk.W, pady=(10, 5)
+    ttk.Label(main_frame, text="Detection Summary:", 
+              font=('Arial', 10, 'bold')).grid(
+        row=row, column=0, sticky=tk.W, pady=(15, 5)
     )
 
     row += 1
-    app.log_text = scrolledtext.ScrolledText(main_frame, height=15, width=80,
-                                             wrap=tk.WORD, state='disabled')
-    app.log_text.grid(row=row, column=0, columnspan=3,
-                      sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+    app.log_text = scrolledtext.ScrolledText(
+        main_frame,
+        height=4,
+        wrap=tk.WORD,
+        state='disabled'
+    )
+    app.log_text.grid(
+        row=row,
+        column=0,
+        columnspan=3,
+        sticky=(tk.W, tk.E),
+        pady=5
+    )
 
+    # =========================
+    # AI Assistant Section
+    # =========================
+    row += 1
+    ttk.Label(main_frame, text="AI Assistant Summary:", 
+              font=('Arial', 10, 'bold')).grid(
+        row=row, column=0, sticky=tk.W, pady=(15, 5)
+    )
+
+    row += 1
+    app.ai_chat = scrolledtext.ScrolledText(
+        main_frame,
+        height=10,
+        wrap=tk.WORD,
+        state='disabled'
+    )
+    app.ai_chat.grid(
+        row=row,
+        column=0,
+        columnspan=3,
+        sticky=(tk.W, tk.E, tk.N, tk.S),
+        pady=5
+    )
+
+    # Make AI section expandable
     main_frame.rowconfigure(row, weight=1)
+
+    # AI Chat Section
+    row += 1
+    ttk.Label(main_frame, text="AI Assistant:", font=('Arial', 10, 'bold')).grid(
+        row=row, column=0, sticky=tk.W, pady=(15, 5)
+    )
+
+    row += 1
+    app.ai_chat = scrolledtext.ScrolledText(
+        main_frame, height=10, width=80,
+        wrap=tk.WORD, state='disabled'
+    )
+    app.ai_chat.grid(row=row, column=0, columnspan=3,
+                    sticky=(tk.W, tk.E), pady=5)
+
+    row += 1
+    app.ai_entry = ttk.Entry(main_frame)
+    app.ai_entry.grid(row=row, column=0, columnspan=2,
+                    sticky=(tk.W, tk.E), pady=5)
+
+    ttk.Button(main_frame, text="Ask AI",
+            command=app.ask_ai).grid(row=row, column=2, padx=5)
 
     # Instructions
     row += 1

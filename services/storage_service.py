@@ -21,7 +21,8 @@ class StorageService:
                     dataframe=pivot_data['media'],
                     grand_total_identifier='Grand Total',
                     bold_columns=[config.total_column_name],
-                    highlight_threshold=0.5
+                    highlight_threshold=0.5,
+                    total_column_name=config.total_column_name
                 )
 
                 formatter.apply_standard_formatting(
@@ -29,5 +30,6 @@ class StorageService:
                     dataframe=pivot_data['unit'],
                     grand_total_identifier='Grand Total',
                     bold_columns=[config.total_column_name],
-                    highlight_threshold=0.5
+                    highlight_threshold=0.5,
+                    total_column_name=config.total_column_name
                 )
