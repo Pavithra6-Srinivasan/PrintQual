@@ -69,12 +69,10 @@ class PivotGeneratorApp:
         self.root.update()
     
     def update_status(self, message, color="blue"):
-        """Update status label."""
         self.status_label.config(text=message, foreground=color)
         self.root.update()
     
     def generate_pivots(self):
-        """Generate pivot tables in a separate thread."""
         if not self.raw_data_file.get():
             messagebox.showerror("Error", "Please select a raw data file!")
             return
@@ -126,8 +124,8 @@ class PivotGeneratorApp:
 
     def display_ai_summary(self, summary_text):
         """Display AI summary in chat-style format."""
-        self.ai_chat.config(state='normal')
-        self.ai_chat.delete("1.0", tk.END)
+        self.ai_summary.config(state='normal')
+        self.ai_summary.delete("1.0", tk.END)
 
         formatted_text = (
             "AI Analysis Summary\n"
@@ -135,8 +133,8 @@ class PivotGeneratorApp:
             f"{summary_text}\n"
         )
 
-        self.ai_chat.insert(tk.END, formatted_text)
-        self.ai_chat.config(state='disabled')
+        self.ai_summary.insert(tk.END, formatted_text)
+        self.ai_summary.config(state='disabled')
 
     def generate_worker(self):
         try:

@@ -10,11 +10,44 @@ from tkinter import ttk, scrolledtext
 def create_widgets(app):
     """Create all UI widgets and attach them to the app instance."""
 
-    main_frame = ttk.Frame(app.root, padding="10")
-    main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+    # Create scrollable canvas
+    canvas = tk.Canvas(app.root)
+    scrollbar = ttk.Scrollbar(app.root, orient="vertical", command=canvas.yview)
+
+    scrollable_frame = ttk.Frame(canvas, padding="10")
+
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")
+        )
+    )
+
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas_window = canvas.create_window(
+        (0, 0),
+        window=scrollable_frame,
+        anchor="nw"
+    )
+
+    def resize_frame(event):
+        canvas.itemconfig(canvas_window, width=event.width)
+
+    canvas.bind("<Configure>", resize_frame)
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+    canvas.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
 
     app.root.columnconfigure(0, weight=1)
     app.root.rowconfigure(0, weight=1)
+
+    main_frame = scrollable_frame
     main_frame.columnconfigure(1, weight=1)
 
     # Title
@@ -28,7 +61,7 @@ def create_widgets(app):
         row=row, column=0, sticky=tk.W, pady=5
     )
     ttk.Entry(main_frame, textvariable=app.raw_data_file, width=60).grid(
-        row=row, column=1, sticky=(tk.W, tk.E), padx=5
+        row=row, column=1, sticky="nsew", padx=5
     )
     ttk.Button(main_frame, text="Browse...", command=app.browse_raw_data).grid(
         row=row, column=2, padx=5
@@ -40,20 +73,12 @@ def create_widgets(app):
         row=row, column=0, sticky=tk.W, pady=5
     )
     ttk.Entry(main_frame, textvariable=app.output_folder, width=60).grid(
-        row=row, column=1, sticky=(tk.W, tk.E), padx=5
+        row=row, column=1, sticky="nsew", padx=5
     )
     ttk.Button(main_frame, text="Browse...", command=app.browse_output_folder).grid(
         row=row, column=2, padx=5
     )
-
-    # Info Label
-    row += 1
-    info_text = "• Test type will be auto-detected\n• Spec file: spec.xlsx (current folder)"
-    ttk.Label(main_frame, text=info_text, foreground="gray",
-              justify=tk.LEFT, font=('Arial', 9)).grid(
-        row=row, column=0, columnspan=3, pady=10, sticky=tk.W
-    )
-
+    
     # Generate Button
     row += 1
     app.generate_btn = ttk.Button(main_frame, text="Generate Pivot Tables",
@@ -63,26 +88,27 @@ def create_widgets(app):
     # Progress Bar
     row += 1
     app.progress = ttk.Progressbar(main_frame, mode='indeterminate')
-    app.progress.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+    app.progress.grid(row=row, column=0, columnspan=3, sticky="nsew", pady=5)
 
     # Status Label
     row += 1
     app.status_label = ttk.Label(main_frame, text="Ready", foreground="blue")
     app.status_label.grid(row=row, column=0, columnspan=3, pady=5)
 
-    # =========================
-    # Detection Summary Section
-    # =========================
+    # ============================
+    # LOG / DETECTION SECTION
+    # ============================
+
     row += 1
     ttk.Label(main_frame, text="Detection Summary:", 
-              font=('Arial', 10, 'bold')).grid(
+            font=('Arial', 10, 'bold')).grid(
         row=row, column=0, sticky=tk.W, pady=(15, 5)
     )
 
     row += 1
     app.log_text = scrolledtext.ScrolledText(
         main_frame,
-        height=4,
+        height=5,
         wrap=tk.WORD,
         state='disabled'
     )
@@ -90,23 +116,49 @@ def create_widgets(app):
         row=row,
         column=0,
         columnspan=3,
-        sticky=(tk.W, tk.E),
+        sticky="nsew",
         pady=5
     )
 
-    # =========================
-    # AI Assistant Section
-    # =========================
+    # ============================
+    # AI SUMMARY SECTION
+    # ============================
+
     row += 1
-    ttk.Label(main_frame, text="AI Assistant Summary:", 
-              font=('Arial', 10, 'bold')).grid(
+    ttk.Label(main_frame, text="Summary:", 
+            font=('Arial', 10, 'bold')).grid(
+        row=row, column=0, sticky=tk.W, pady=(15, 5)
+    )
+
+    row += 1
+    app.ai_summary = scrolledtext.ScrolledText(
+        main_frame,
+        height=10,
+        wrap=tk.WORD,
+        state='disabled'
+    )
+    app.ai_summary.grid(
+        row=row,
+        column=0,
+        columnspan=3,
+        sticky="nsew",
+        pady=5
+    )
+
+    # ============================
+    # AI CHAT SECTION
+    # ============================
+
+    row += 1
+    ttk.Label(main_frame, text="Ask AI:", 
+            font=('Arial', 10, 'bold')).grid(
         row=row, column=0, sticky=tk.W, pady=(15, 5)
     )
 
     row += 1
     app.ai_chat = scrolledtext.ScrolledText(
         main_frame,
-        height=10,
+        height=8,
         wrap=tk.WORD,
         state='disabled'
     )
@@ -114,34 +166,25 @@ def create_widgets(app):
         row=row,
         column=0,
         columnspan=3,
-        sticky=(tk.W, tk.E, tk.N, tk.S),
+        sticky="nsew",
         pady=5
     )
 
-    # Make AI section expandable
-    main_frame.rowconfigure(row, weight=1)
-
-    # AI Chat Section
-    row += 1
-    ttk.Label(main_frame, text="AI Assistant:", font=('Arial', 10, 'bold')).grid(
-        row=row, column=0, sticky=tk.W, pady=(15, 5)
-    )
-
-    row += 1
-    app.ai_chat = scrolledtext.ScrolledText(
-        main_frame, height=10, width=80,
-        wrap=tk.WORD, state='disabled'
-    )
-    app.ai_chat.grid(row=row, column=0, columnspan=3,
-                    sticky=(tk.W, tk.E), pady=5)
-
     row += 1
     app.ai_entry = ttk.Entry(main_frame)
-    app.ai_entry.grid(row=row, column=0, columnspan=2,
-                    sticky=(tk.W, tk.E), pady=5)
+    app.ai_entry.grid(
+        row=row,
+        column=0,
+        columnspan=2,
+        sticky="nsew",
+        pady=5
+    )
 
-    ttk.Button(main_frame, text="Ask AI",
-            command=app.ask_ai).grid(row=row, column=2, padx=5)
+    ttk.Button(
+        main_frame,
+        text="Ask AI",
+        command=app.ask_ai
+    ).grid(row=row, column=2, padx=5)
 
     # Instructions
     row += 1
@@ -156,3 +199,11 @@ Instructions:
     ttk.Label(main_frame, text=instructions, justify=tk.LEFT,
               foreground="gray").grid(row=row, column=0,
                                         columnspan=3, pady=10, sticky=tk.W)
+    
+    for i in range(20):  # adjust range if needed
+        main_frame.rowconfigure(i, weight=0)
+
+    # Make text areas expandable
+    main_frame.rowconfigure(8, weight=1)
+    main_frame.rowconfigure(10, weight=2)
+    main_frame.rowconfigure(12, weight=2)

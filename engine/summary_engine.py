@@ -6,7 +6,6 @@ Analyzes generated pivot tables and produces summary insights.
 
 import pandas as pd
 
-
 class PivotSummaryEngine:
     def __init__(self, all_pivots: dict):
         """
@@ -29,9 +28,10 @@ class PivotSummaryEngine:
         overall_results = []
 
         for category_name, data in self.all_pivots.items():
-            df = data["media"]
+            media_df = data["media"]
+            unit_df = data["unit"]
 
-            summary = self.analyze_category(category_name, df)
+            summary = self.analyze_category(category_name, media_df, unit_df)
             category_summaries.append(summary)
             overall_results.append(summary)
 
@@ -46,50 +46,100 @@ class PivotSummaryEngine:
             "worst_category": worst_category
         }
 
-    def analyze_category(self, category_name, df):
-        """
-        Analyze a single pivot table.
-        """
+    def analyze_category(self, category_name, media_df, unit_df):
+
         result = {
             "category": category_name,
+            "media_summary": [],
+            "unit_summary": [],
             "total_pass": 0,
             "total_fail": 0,
-            "fail_rate": 0,
-            "worst_columns": []
+            "fail_rate": 0
         }
 
-        if "Result" in df.columns:
-            pass_count = (df["Result"] == "Pass").sum()
-            fail_count = (df["Result"] == "Fail").sum()
+        # -----------------------------
+        # CATEGORY LEVEL
+        # -----------------------------
+        if "Result" in media_df.columns:
+            # Normalize result column
+            media_df["Result"] = (
+                media_df["Result"]
+                .astype(str)
+                .str.strip()
+                .str.lower()
+            )
 
-            result["total_pass"] = int(pass_count)
-            result["total_fail"] = int(fail_count)
+            pass_count = (media_df["Result"] == "pass").sum()
+            fail_count = (media_df["Result"] == "fail").sum()
 
             total = pass_count + fail_count
+            result["total_pass"] = int(pass_count)
+            result["total_fail"] = int(fail_count)
             result["fail_rate"] = round((fail_count / total) * 100, 2) if total > 0 else 0
 
-        # Identify fail-related columns
-        fail_columns = [
-            col for col in df.columns
-            if "/K" in str(col) and "Total" not in str(col)
-        ]
+        # -----------------------------
+        # MEDIA TYPE LEVEL
+        # -----------------------------
+        if "Media Type" in media_df.columns:
 
-        column_fail_values = {}
+            grouped = media_df.groupby("Media Type")
 
-        for col in fail_columns:
-            try:
-                column_fail_values[col] = df[col].sum()
-            except Exception:
-                column_fail_values[col] = 0
+            for media_type, group in grouped:
 
-        # Sort highest fail contributors
-        sorted_cols = sorted(
-            column_fail_values.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
+                # Determine overall status
+                overall_status = "Fail" if (group["Result"] == "fail").any() else "Pass"
 
-        result["worst_columns"] = sorted_cols[:3]
+                # Capture failing combinations
+                failed_rows = group[group["Result"] == "fail"]
+
+                failed_combos = []
+                for _, row in failed_rows.iterrows():
+
+                    combo = []
+                    if "Media Cat" in group.columns:
+                        combo.append(f"Media Cat: {row.get('Media Cat')}")
+                    if "Print Mode" in group.columns:
+                        combo.append(f"Print Mode: {row.get('Print Mode')}")
+                    if "Test mode" in group.columns:
+                        combo.append(f"Test Mode: {row.get('Test mode')}")
+
+                    failed_combos.append(", ".join(combo))
+
+                result["media_summary"].append({
+                    "media_type": media_type,
+                    "overall_result": overall_status,
+                    "failed_combinations": failed_combos
+                })
+
+        # -----------------------------
+        # UNIT LEVEL
+        # -----------------------------
+        if "Unit" in unit_df.columns:
+            unit_df["Result"] = (
+                unit_df["Result"]
+                .astype(str)
+                .str.strip()
+                .str.lower()
+            )
+            grouped = unit_df.groupby("Unit")
+
+            for unit, group in grouped:
+
+                overall_status = "Fail" if (group["Result"] == "fail").any() else "Pass"
+
+                failed_rows = group[group["Result"] == "fail"]
+
+                failed_conditions = []
+                for _, row in failed_rows.iterrows():
+                    failed_conditions.append(
+                        f"{row.get('Media Type')} / {row.get('Print Mode')}"
+                    )
+
+                result["unit_summary"].append({
+                    "unit": unit,
+                    "overall_result": overall_status,
+                    "failed_combinations": failed_conditions
+                })
 
         return result
 
@@ -98,28 +148,32 @@ class PivotSummaryEngine:
         Convert summary dict into readable text for GUI.
         """
         lines = []
-        lines.append("=" * 60)
         lines.append("PIVOT TABLE SUMMARY")
-        lines.append("=" * 60)
         lines.append("")
 
         for cat in summary_dict["categories"]:
             lines.append(f"Category: {cat['category']}")
-            lines.append(f"  Pass: {cat['total_pass']}")
-            lines.append(f"  Fail: {cat['total_fail']}")
-            lines.append(f"  Fail Rate: {cat['fail_rate']}%")
+            lines.append("")
 
-            if cat["worst_columns"]:
-                lines.append("  Top Fail Contributors:")
-                for col, val in cat["worst_columns"]:
-                    lines.append(f"     - {col}: {val}")
+            lines.append("MEDIA RESULTS:")
+            for media in cat["media_summary"]:
+                lines.append(f"  - {media['media_type']}: {media['overall_result']}")
+                if media["failed_combinations"]:
+                    for combo in media["failed_combinations"]:
+                        lines.append(f"      ↳ Failed: {combo}")
+
+            lines.append("")
+            lines.append("UNIT RESULTS:")
+            for unit in cat["unit_summary"]:
+                lines.append(f"  - Unit {unit['unit']}: {unit['overall_result']}")
+                if unit["failed_combinations"]:
+                    for combo in unit["failed_combinations"]:
+                        lines.append(f"      ↳ Failed: {combo}")
 
             lines.append("")
 
         worst = summary_dict["worst_category"]
-        lines.append("=" * 60)
         lines.append(f"WORST PERFORMING CATEGORY: {worst['category']}")
         lines.append(f"Fail Rate: {worst['fail_rate']}%")
-        lines.append("=" * 60)
 
         return "\n".join(lines)

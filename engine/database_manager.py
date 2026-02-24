@@ -29,8 +29,7 @@ class DatabaseManager:
             category VARCHAR(255),
             total_pass INT,
             total_fail INT,
-            fail_rate FLOAT,
-            worst_column VARCHAR(255)
+            fail_rate FLOAT
         )
         """
 
@@ -45,17 +44,12 @@ class DatabaseManager:
         timestamp = datetime.now()
 
         for category in summary_data["categories"]:
-            worst_col = (
-                category["worst_columns"][0][0]
-                if category["worst_columns"]
-                else None
-            )
 
             insert_query = text("""
                 INSERT INTO pivot_summary
-                (run_timestamp, category, total_pass, total_fail, fail_rate, worst_column)
+                (run_timestamp, category, total_pass, total_fail, fail_rate)
                 VALUES
-                (:timestamp, :category, :pass, :fail, :rate, :worst)
+                (:timestamp, :category, :pass, :fail, :rate)
             """)
 
             with self.engine.connect() as conn:
@@ -65,6 +59,5 @@ class DatabaseManager:
                     "pass": category["total_pass"],
                     "fail": category["total_fail"],
                     "rate": category["fail_rate"],
-                    "worst": worst_col
                 })
                 conn.commit()
