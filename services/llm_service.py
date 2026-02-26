@@ -26,7 +26,7 @@ class LLMService:
                 "prompt": conversation,
                 "stream": False
             },
-            timeout=120
+            timeout=None
         )
 
         result = response.json()["response"].strip()

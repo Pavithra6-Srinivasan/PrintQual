@@ -121,31 +121,6 @@ def create_widgets(app):
     )
 
     # ============================
-    # AI SUMMARY SECTION
-    # ============================
-
-    row += 1
-    ttk.Label(main_frame, text="Summary:", 
-            font=('Arial', 10, 'bold')).grid(
-        row=row, column=0, sticky=tk.W, pady=(15, 5)
-    )
-
-    row += 1
-    app.ai_summary = scrolledtext.ScrolledText(
-        main_frame,
-        height=10,
-        wrap=tk.WORD,
-        state='disabled'
-    )
-    app.ai_summary.grid(
-        row=row,
-        column=0,
-        columnspan=3,
-        sticky="nsew",
-        pady=5
-    )
-
-    # ============================
     # AI CHAT SECTION
     # ============================
 

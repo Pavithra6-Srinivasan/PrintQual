@@ -38,7 +38,6 @@ class PivotGeneratorApp:
 
         # Load LLaMA model once
         self.llm_service = LLMService()
-        self.latest_summary_text = None
         
     def browse_raw_data(self):
         """Browse for raw data file."""
@@ -100,41 +99,63 @@ class PivotGeneratorApp:
 
         self.ai_entry.delete(0, tk.END)
 
-        system_prompt = """
+        # Show user question immediately
+        self.ai_chat.config(state='normal')
+        self.ai_chat.insert(tk.END, f"\nYou: {question}\n")
+        self.ai_chat.insert(tk.END, "AI: Thinking...\n")
+        self.ai_chat.config(state='disabled')
+        self.ai_chat.see(tk.END)
+
+        thread = threading.Thread(
+            target=self.ask_ai_worker,
+            args=(question,),
+            daemon=True
+        )
+        thread.start()
+
+    def ask_ai_worker(self, question):
+        short_summary = self.latest_summary_text[:4000]
+
+        try:
+            system_prompt = """
     You are a senior quality data analyst.
     Analyze pivot summary results and provide professional insights.
     Be clear, structured and concise.
     """
 
-        full_prompt = f"""
+            full_prompt = f"""
     User Question:
     {question}
 
     Pivot Summary:
-    {self.latest_summary_text}
+    {short_summary}
     """
 
-        response = self.llm_service.ask(system_prompt, full_prompt)
+            response = self.llm_service.ask(system_prompt, full_prompt)
+
+            self.root.after(0, lambda: self.display_ai_response(question, response))
+
+        except Exception as e:
+            self.root.after(0, lambda err=e: messagebox.showerror("AI Error", str(err)))
+
+    def display_ai_response(self, question, response):
+        """Display AI chat response in clean chat format."""
 
         self.ai_chat.config(state='normal')
-        self.ai_chat.insert(tk.END, f"\nYou: {question}\n", "user")
-        self.ai_chat.insert(tk.END, f"AI: {response}\n", "assistant")
+
+        # Remove last line if it's 'Thinking...'
+        try:
+            last_line = self.ai_chat.get("end-2l", "end-1l").strip()
+            if "Thinking..." in last_line:
+                self.ai_chat.delete("end-2l", "end-1l")
+        except:
+            pass
+
+        self.ai_chat.insert(tk.END, f"\nYou: {question}\n")
+        self.ai_chat.insert(tk.END, f"AI: {response}\n")
+
         self.ai_chat.config(state='disabled')
         self.ai_chat.see(tk.END)
-
-    def display_ai_summary(self, summary_text):
-        """Display AI summary in chat-style format."""
-        self.ai_summary.config(state='normal')
-        self.ai_summary.delete("1.0", tk.END)
-
-        formatted_text = (
-            "AI Analysis Summary\n"
-            "============================\n\n"
-            f"{summary_text}\n"
-        )
-
-        self.ai_summary.insert(tk.END, formatted_text)
-        self.ai_summary.config(state='disabled')
 
     def generate_worker(self):
         try:
@@ -148,29 +169,34 @@ class PivotGeneratorApp:
             pivot_service = PivotService(raw_file, spec_file)
             sub_assembly, product, sheet_name = pivot_service.detect_test_type()
 
-            if sub_assembly.upper() == "ADF":
-                test_categories = ADF_CATEGORIES
-            else:
-                test_categories = Paperpath_CATEGORIES
+            test_categories = (
+                ADF_CATEGORIES if sub_assembly.upper() == "ADF"
+                else Paperpath_CATEGORIES
+            )
 
+            # Show detection info
             self.log_text.config(state='normal')
             self.log_text.delete("1.0", tk.END)
             self.log_text.insert(tk.END, f"Printer: {product}\n")
             self.log_text.insert(tk.END, f"Sub-Assembly: {sub_assembly}\n")
             self.log_text.config(state='disabled')
 
-            # Generate All Pivots Once
+            # Generate Pivots
             self.update_status("Generating pivots...", "blue")
             all_pivots = pivot_service.generate_all_pivots(test_categories)
 
-            # Save Excel
-            self.update_status("Saving Excel...", "blue")
-
+            # Timestamp once
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_filename = f"{product}_{sheet_name}_Pivot_{timestamp}.xlsx"
+
+            # Save Pivot Excel
+            self.update_status("Saving pivot tables...", "blue")
+            output_filename = f"{product}_{sheet_name}_Pivot_Tables_{timestamp}.xlsx"
             output_path = Path(self.output_folder.get()) / output_filename
 
             storage = StorageService()
+            storage.save_excel(output_path, all_pivots)
+
+            self.log(f"Pivot file saved: {output_path}")
 
             # Generate Summary
             self.update_status("Generating summary...", "blue")
@@ -178,7 +204,14 @@ class PivotGeneratorApp:
             summary_service = SummaryService(all_pivots)
             summary_data, summary_text = summary_service.generate()
             self.latest_summary_text = summary_text
-            self.display_ai_summary(summary_text)
+
+            # Save Summary Report (if you implemented report saving earlier)
+            report_path = storage.save_summary_report(
+                summary_data,
+                self.output_folder.get()
+            )
+
+            self.log(f"Summary report saved: {report_path}")
 
             # Save to Database
             self.update_status("Saving to database...", "blue")
@@ -187,38 +220,33 @@ class PivotGeneratorApp:
                 host="15.46.29.115",
                 database="quality_sandbox",
                 username="pavithra_030226",
-                password = urllib.parse.quote_plus("pavithra@030226"),
+                password=urllib.parse.quote_plus("pavithra@030226"),
                 db_type="mysql"
             )
 
             db.create_tables()
             db.insert_summary(summary_data)
 
-            # Auto-generate filename
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_filename = f"{product}_{sheet_name}_Pivot_Tables_{timestamp}.xlsx"
-            output_path = Path(self.output_folder.get()) / output_filename
-            
-            storage = StorageService()
-            storage.save_excel(output_path, all_pivots)
-
-            
-            self.log_text.config(state='normal')
-            
             self.update_status("Complete! ✓", "green")
-        
+            self.log("PROCESS COMPLETED SUCCESSFULLY")
+
         except Exception as e:
             error_msg = str(e)
             self.log(f"\n✗ ERROR: {error_msg}")
+
             import traceback
-            traceback_str = traceback.format_exc()
-            self.log(traceback_str)
+            self.log(traceback.format_exc())
+
             self.update_status("Error! ✗", "red")
-            self.root.after(0, lambda msg=error_msg: messagebox.showerror(
-                "Error", 
-                f"Error generating pivot tables:\n\n{msg}"
-            ))
-        
+
+            self.root.after(
+                0,
+                lambda msg=error_msg: messagebox.showerror(
+                    "Error",
+                    f"Error generating pivot tables:\n\n{msg}"
+                )
+            )
+
         finally:
             self.root.after(0, lambda: self.generate_btn.config(state='normal'))
             self.root.after(0, lambda: self.progress.stop())
