@@ -151,8 +151,8 @@ class UnifiedPivotGenerator:
         if 'Media Cat' in self.processed_data.columns:
             groupby_cols.append('Media Cat')
 
-        if 'Input_Tray' in self.processed_data.columns:
-            groupby_cols.append('Input_Tray')
+        if 'Input Tray' in self.processed_data.columns:
+            groupby_cols.append('Input Tray')
 
         if 'Media Type' in self.processed_data.columns:
             groupby_cols.append('Media Type')
@@ -251,8 +251,8 @@ class UnifiedPivotGenerator:
         if 'Media Cat' in self.processed_data.columns:
             groupby_cols.append('Media Cat')
 
-        if 'Input_Tray' in self.processed_data.columns:
-            groupby_cols.append('Input_Tray')
+        if 'Input Tray' in self.processed_data.columns:
+            groupby_cols.append('Input Tray')
 
         if 'Media Type' in self.processed_data.columns:
             groupby_cols.append('Media Type')

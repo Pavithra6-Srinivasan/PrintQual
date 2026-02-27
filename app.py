@@ -185,18 +185,8 @@ class PivotGeneratorApp:
             self.update_status("Generating pivots...", "blue")
             all_pivots = pivot_service.generate_all_pivots(test_categories)
 
-            # Timestamp once
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-            # Save Pivot Excel
-            self.update_status("Saving pivot tables...", "blue")
-            output_filename = f"{product}_{sheet_name}_Pivot_Tables_{timestamp}.xlsx"
-            output_path = Path(self.output_folder.get()) / output_filename
-
-            storage = StorageService()
-            storage.save_excel(output_path, all_pivots)
-
-            self.log(f"Pivot file saved: {output_path}")
+            if not all_pivots:
+                raise ValueError("No pivot tables generated.")
 
             # Generate Summary
             self.update_status("Generating summary...", "blue")
@@ -205,15 +195,28 @@ class PivotGeneratorApp:
             summary_data, summary_text = summary_service.generate()
             self.latest_summary_text = summary_text
 
-            # Save Summary Report (if you implemented report saving earlier)
-            report_path = storage.save_summary_report(
-                summary_data,
-                self.output_folder.get()
+            # Prepare Reports Folder
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            reports_folder = Path(self.output_folder.get()) / "reports"
+            reports_folder.mkdir(parents=True, exist_ok=True)
+
+            output_filename = f"{product}_{sheet_name}_Quality_Report_{timestamp}.xlsx"
+            output_path = reports_folder / output_filename
+
+            # Save Combined Report
+            self.update_status("Saving combined report...", "blue")
+
+            storage = StorageService()
+            storage.save_full_report(
+                output_path=output_path,
+                summary_data=summary_data,
+                all_pivots=all_pivots
             )
 
-            self.log(f"Summary report saved: {report_path}")
+            self.log(f"Report saved: {output_path}")
 
-            # Save to Database
+            #Save to Database
             self.update_status("Saving to database...", "blue")
 
             db = DatabaseManager(
@@ -250,7 +253,6 @@ class PivotGeneratorApp:
         finally:
             self.root.after(0, lambda: self.generate_btn.config(state='normal'))
             self.root.after(0, lambda: self.progress.stop())
-
 
 def main():
     """Main entry point."""
