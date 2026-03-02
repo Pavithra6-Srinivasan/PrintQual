@@ -4,13 +4,15 @@ import pandas as pd
 
 class SpecValidator:
     def __init__(self, spec_file_path, sheet_name, spec_category,
-                 product=None, sub_assembly=None):
+             product=None, sub_assembly=None):
 
         self.spec_file_path = spec_file_path
         self.sheet_name = sheet_name
         self.spec_category = spec_category
-        self.product = product
-        self.sub_assembly = sub_assembly
+
+        # product here is already the VARIANT (Hi / Base / SF)
+        self.product = str(product).strip().lower() if product else None
+        self.sub_assembly = str(sub_assembly).strip().lower() if sub_assembly else None
 
         self.spec_df = self.load_specs()
 
@@ -43,11 +45,13 @@ class SpecValidator:
 
         context = {}
 
+        # Product variant (Hi / Base / SF)
         if self.product:
-            context["Product"] = str(self.product).strip().lower()
+            context["Product"] = self.product
 
+        # Sub Assembly
         if self.sub_assembly:
-            context["Sub Assembly"] = str(self.sub_assembly).strip().lower()
+            context["Sub Assembly"] = self.sub_assembly
 
         mapping = [
             "Test Condition",
@@ -63,9 +67,9 @@ class SpecValidator:
                 context[col] = str(pivot_row[col]).strip().lower()
 
         return context
-
+    
     # ---------------------------------------------------------
-    # MATCH SINGLE CELL (supports comma-separated spec values)
+    # MATCH SINGLE CELL
     # ---------------------------------------------------------
     def cell_matches(self, spec_cell, pivot_value):
         """

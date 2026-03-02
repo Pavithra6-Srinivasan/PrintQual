@@ -128,10 +128,10 @@ SOFT_ERROR_CONFIG = SpecCategoryConfig(
 SKEW_CONFIG = SpecCategoryConfig(
     name="Skew",
     error_column_config={
-        'TOF_A>B_S1': ['TOF_A>B_S1', 'TOF_A>B_S2'],
-        'TOF_B>A_S1': ['TOF_B>A_S1', 'TOF_B>A_S2'],
-        'SOF_A>C_S1': ['SOF_A>C_S1', 'SOF_A>C_S2'],
-        'SOF_C>A_S1': ['SOF_C>A_S1', 'SOF_C>A_S2'],
+        'TOF_A>B_S1': ['TOF_A>B_S1', 'TOF_A>B_S2', 'TOF+SOF_A>B + C>A_S1', 'TOF+SOF_A>B + C>A_S2'],
+        'TOF_B>A_S1': ['TOF_B>A_S1', 'TOF_B>A_S2', 'TOF+SOF_B>A + A>C_S1', 'TOF+SOF_B>A + A>C_S2'],
+        'SOF_A>C_S1': ['SOF_A>C_S1', 'SOF_A>C_S2', 'TOF+SOF_A>B + C>A_S1', 'TOF+SOF_A>B + C>A_S2'],
+        'SOF_C>A_S1': ['SOF_C>A_S1', 'SOF_C>A_S2', 'TOF+SOF_B>A + A>C_S1', 'TOF+SOF_B>A + A>C_S2'],
         'TOF+SOF_A>B + C>A_S1': ['TOF+SOF_A>B + C>A_S1', 'TOF+SOF_A>B + C>A_S2'],
         'TOF+SOF_B>A + A>C_S1': ['TOF+SOF_B>A + A>C_S1', 'TOF+SOF_B>A + A>C_S2'],
         'FEED SKEW_C>D_S1': ['FEED SKEW_C>D_S1', 'FEED SKEW_C>D_S2'],

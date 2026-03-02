@@ -13,7 +13,7 @@ class PivotService:
             Paperpath_CATEGORIES[0],
             self.spec_file
         )
-        return temp_gen.sub_assembly, temp_gen.product, temp_gen.spec_sheet
+        return temp_gen.sub_assembly, temp_gen.detected_main_printer, temp_gen.detected_variant, temp_gen.spec_sheet
 
     def generate_all_pivots(self, categories):
         all_pivots = {}

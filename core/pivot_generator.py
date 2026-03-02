@@ -72,7 +72,8 @@ class UnifiedPivotGenerator:
         )
         
         # Auto-detect product and sub assembly from raw data
-        self.product = None
+        self.detected_main_printer = None
+        self.detected_variant = None
         self.sub_assembly = None
 
         # Detect from Test Name FIRST (more reliable)
@@ -96,23 +97,42 @@ class UnifiedPivotGenerator:
         if not self.sub_assembly:
             self.sub_assembly = "Unknown"
 
-        # Detect product from Program & SKU
+        # Detect product + variant from Program & SKU
         if 'Program & SKU' in self.raw_data.columns:
+
             sku_series = self.raw_data['Program & SKU'].dropna().astype(str)
+
             if not sku_series.empty:
-                self.product = sku_series.iloc[0].split()[0]
-                
+
+                raw_sku = sku_series.iloc[0].strip()
+                raw_lower = raw_sku.lower()
+
+                # Detect MAIN printer name
+                self.detected_main_printer = raw_sku.split()[0]
+
+                # Detect VARIANT
+                if "hi" in raw_lower:
+                    self.detected_variant = "Hi"
+                elif "base" in raw_lower:
+                    self.detected_variant = "Base"
+                elif "sf" in raw_lower:
+                    self.detected_variant = "SF"
+                else:
+                    self.detected_variant = "Standard"
+
+                print(f"[DETECTED] Main Printer: {self.detected_main_printer}")
+                print(f"[DETECTED] Variant: {self.detected_variant}")
                 print(f"[DETECTED] Sub Assembly: {self.sub_assembly}")
 
         # Initialize spec validator if spec file provided
         if spec_file_path and self.spec_sheet:
             try:
                 self.spec_validator = SpecValidator(
-                spec_file_path=spec_file_path,
-                sheet_name=self.spec_sheet,
-                spec_category=self.config.name,
-                product=self.product,
-                sub_assembly=self.sub_assembly
+                    spec_file_path=spec_file_path,
+                    sheet_name=self.spec_sheet,
+                    spec_category=self.config.name,
+                    product=self.detected_variant,
+                    sub_assembly=self.sub_assembly
                 )
                 print(f"✓ Spec validator initialized using sheet: {self.spec_sheet}")
             except Exception as e:

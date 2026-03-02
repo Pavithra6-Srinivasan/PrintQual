@@ -167,7 +167,7 @@ class PivotGeneratorApp:
 
             # Detect Test Type
             pivot_service = PivotService(raw_file, spec_file)
-            sub_assembly, product, sheet_name = pivot_service.detect_test_type()
+            sub_assembly, detected_main_printer, detected_variant, sheet_name = pivot_service.detect_test_type()
 
             test_categories = (
                 ADF_CATEGORIES if sub_assembly.upper() == "ADF"
@@ -177,7 +177,7 @@ class PivotGeneratorApp:
             # Show detection info
             self.log_text.config(state='normal')
             self.log_text.delete("1.0", tk.END)
-            self.log_text.insert(tk.END, f"Printer: {product}\n")
+            self.log_text.insert(tk.END, f"Printer: {detected_main_printer}, {detected_variant}\n")
             self.log_text.insert(tk.END, f"Sub-Assembly: {sub_assembly}\n")
             self.log_text.config(state='disabled')
 
@@ -201,7 +201,7 @@ class PivotGeneratorApp:
             reports_folder = Path(self.output_folder.get()) / "reports"
             reports_folder.mkdir(parents=True, exist_ok=True)
 
-            output_filename = f"{product}_{sheet_name}_Quality_Report_{timestamp}.xlsx"
+            output_filename = f"{detected_main_printer}_{detected_variant}_Quality_Report_{timestamp}.xlsx"
             output_path = reports_folder / output_filename
 
             # Save Combined Report
