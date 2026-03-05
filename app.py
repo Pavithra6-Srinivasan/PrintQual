@@ -1,5 +1,5 @@
 """
-app_local.py - Life Test Data Analysis Desktop Application
+app.py - Life Test Data Analysis Desktop Application
 
 Simplified local GUI with automatic spec file detection and test type auto-detection.
 """
@@ -10,13 +10,14 @@ from datetime import datetime
 import threading
 import urllib.parse
 
-from services.summary_service import SummaryService
 from ui_builder import create_widgets
 from core.Spec_Category_config import Paperpath_CATEGORIES, ADF_CATEGORIES
 from engine.database_manager import DatabaseManager
 from services.pivot_service import PivotService
 from services.storage_service import StorageService
 from services.llm_service import LLMService
+from services.summary_service import SummaryService
+from core.spec_detector import extract_year_quarter
 
 class PivotGeneratorApp:
     """Desktop GUI for generating pivot tables with auto-detection."""
@@ -195,13 +196,15 @@ class PivotGeneratorApp:
             summary_data, summary_text = summary_service.generate()
             self.latest_summary_text = summary_text
 
+            year, quarter = extract_year_quarter(Path(raw_file).name)
+
             # Prepare Reports Folder
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
             reports_folder = Path(self.output_folder.get()) / "reports"
             reports_folder.mkdir(parents=True, exist_ok=True)
 
-            output_filename = f"{detected_main_printer}_{detected_variant}_Quality_Report_{timestamp}.xlsx"
+            output_filename = f"{detected_main_printer}_{detected_variant}_FY{year}_Q{quarter}_Quality_Report_{timestamp}.xlsx"
             output_path = reports_folder / output_filename
 
             # Save Combined Report
@@ -219,6 +222,7 @@ class PivotGeneratorApp:
             #Save to Database
             self.update_status("Saving to database...", "blue")
 
+
             db = DatabaseManager(
                 host="15.46.29.115",
                 database="quality_sandbox",
@@ -228,7 +232,8 @@ class PivotGeneratorApp:
             )
 
             db.create_tables()
-            db.insert_summary(summary_data)
+            db.insert_summary(summary_data, year, quarter)
+            db.close()
 
             self.update_status("Complete! ✓", "green")
             self.log("PROCESS COMPLETED SUCCESSFULLY")

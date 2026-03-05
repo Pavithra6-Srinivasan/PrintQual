@@ -65,12 +65,6 @@ class UnifiedPivotGenerator:
         # Define numeric columns for aggregation
         self.numeric_columns = ['Tpages'] + self.error_output_columns
         
-        # Process error columns based on config using detector module
-        self.processed_data, self.error_output_columns = prepare_error_columns(
-            self.raw_data,
-            self.config
-        )
-        
         # Auto-detect product and sub assembly from raw data
         self.detected_main_printer = None
         self.detected_variant = None
@@ -303,10 +297,6 @@ class UnifiedPivotGenerator:
         for col in self.error_output_columns:
             col_name = f'{col}/K'
             pivot[col_name] = ((pivot[col] / pivot['Tpages']) * 1000).round(3)
-        
-        # Calculate total error rate (sum of all per-K rates)
-        per_k_cols = [f'{col}/K' for col in self.error_output_columns]
-        pivot[self.config.total_column_name] = (pivot[per_k_cols].sum(axis=1)).round(3)
         
         # Calculate total error rate (sum of all per-K rates)
         per_k_cols = [f'{col}/K' for col in self.error_output_columns]
