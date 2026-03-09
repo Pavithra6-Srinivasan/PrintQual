@@ -8,16 +8,10 @@ from tkinter import filedialog, messagebox
 from pathlib import Path
 from datetime import datetime
 import threading
-import urllib.parse
 
 from ui_builder import create_widgets
-from core.Spec_Category_config import Paperpath_CATEGORIES, ADF_CATEGORIES
-from engine.database_manager import DatabaseManager
-from services.pivot_service import PivotService
-from services.storage_service import StorageService
-from services.llm_service import LLMService
-from services.summary_service import SummaryService
-from core.spec_detector import extract_year_quarter
+from services.ai_service import AIService
+from services.report_pipeline import ReportPipeline
 
 class PivotGeneratorApp:
     """Desktop GUI for generating pivot tables with auto-detection."""
@@ -37,9 +31,9 @@ class PivotGeneratorApp:
         # Create UI
         create_widgets(self)
 
-        # Load LLaMA model once
-        self.llm_service = LLMService()
-        
+        self.ai_service = AIService()
+        self.latest_summary_text = None
+
     def browse_raw_data(self):
         """Browse for raw data file."""
         filename = filedialog.askopenfilename(
@@ -90,10 +84,7 @@ class PivotGeneratorApp:
         thread.start()
     
     def ask_ai(self):
-        if not self.latest_summary_text:
-            messagebox.showerror("Error", "Generate pivots first!")
-            return
-
+        """Ask AI - works independently or with generated pivots"""
         question = self.ai_entry.get().strip()
         if not question:
             return
@@ -103,7 +94,17 @@ class PivotGeneratorApp:
         # Show user question immediately
         self.ai_chat.config(state='normal')
         self.ai_chat.insert(tk.END, f"\nYou: {question}\n")
-        self.ai_chat.insert(tk.END, "AI: Thinking...\n")
+        try:
+            content = self.ai_chat.get("1.0", "end")
+            if "Thinking..." in content:
+                # Find and delete the "Thinking..." line
+                lines = content.split('\n')
+                new_content = '\n'.join([l for l in lines if "Thinking..." not in l])
+                self.ai_chat.delete("1.0", "end")
+                self.ai_chat.insert("1.0", new_content)
+        except:
+            pass        
+        
         self.ai_chat.config(state='disabled')
         self.ai_chat.see(tk.END)
 
@@ -115,29 +116,17 @@ class PivotGeneratorApp:
         thread.start()
 
     def ask_ai_worker(self, question):
-        short_summary = self.latest_summary_text[:4000]
-
         try:
-            system_prompt = """
-    You are a senior quality data analyst.
-    Analyze pivot summary results and provide professional insights.
-    Be clear, structured and concise.
-    """
-
-            full_prompt = f"""
-    User Question:
-    {question}
-
-    Pivot Summary:
-    {short_summary}
-    """
-
-            response = self.llm_service.ask(system_prompt, full_prompt)
-
+            if self.latest_summary_text:
+                response = self.ai_service.analyze_with_context(...)
+            else:
+                response = self.ai_service.answer_question(...)
+            
+            # Actually display the response!
             self.root.after(0, lambda: self.display_ai_response(question, response))
-
+            self.root.after(0, lambda: self.update_status("Ready", "green"))
         except Exception as e:
-            self.root.after(0, lambda err=e: messagebox.showerror("AI Error", str(err)))
+            self.root.after(0, lambda: self.update_status("AI Error", "red"))
 
     def display_ai_response(self, question, response):
         """Display AI chat response in clean chat format."""
@@ -159,100 +148,41 @@ class PivotGeneratorApp:
         self.ai_chat.see(tk.END)
 
     def generate_worker(self):
+
         try:
+
             self.update_status("Starting generation...", "blue")
-            self.log("GENERATING PIVOT TABLES")
 
             raw_file = self.raw_data_file.get()
             spec_file = str(self.spec_file_path) if self.spec_file_path.exists() else None
 
-            # Detect Test Type
-            pivot_service = PivotService(raw_file, spec_file)
-            sub_assembly, detected_main_printer, detected_variant, sheet_name = pivot_service.detect_test_type()
+            pipeline = ReportPipeline()
 
-            test_categories = (
-                ADF_CATEGORIES if sub_assembly.upper() == "ADF"
-                else Paperpath_CATEGORIES
+            result = pipeline.run(
+                raw_file=raw_file,
+                spec_file=spec_file,
+                output_folder=self.output_folder.get()
             )
 
-            # Show detection info
-            self.log_text.config(state='normal')
-            self.log_text.delete("1.0", tk.END)
-            self.log_text.insert(tk.END, f"Printer: {detected_main_printer}, {detected_variant}\n")
-            self.log_text.insert(tk.END, f"Sub-Assembly: {sub_assembly}\n")
-            self.log_text.config(state='disabled')
+            self.latest_summary_text = result["summary_text"]
 
-            # Generate Pivots
-            self.update_status("Generating pivots...", "blue")
-            all_pivots = pivot_service.generate_all_pivots(test_categories)
-
-            if not all_pivots:
-                raise ValueError("No pivot tables generated.")
-
-            # Generate Summary
-            self.update_status("Generating summary...", "blue")
-
-            summary_service = SummaryService(all_pivots)
-            summary_data, summary_text = summary_service.generate()
-            self.latest_summary_text = summary_text
-
-            year, quarter = extract_year_quarter(Path(raw_file).name)
-
-            # Prepare Reports Folder
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-            reports_folder = Path(self.output_folder.get()) / "reports"
-            reports_folder.mkdir(parents=True, exist_ok=True)
-
-            output_filename = f"{detected_main_printer}_{detected_variant}_FY{year}_Q{quarter}_Quality_Report_{timestamp}.xlsx"
-            output_path = reports_folder / output_filename
-
-            # Save Combined Report
-            self.update_status("Saving combined report...", "blue")
-
-            storage = StorageService()
-            storage.save_full_report(
-                output_path=output_path,
-                summary_data=summary_data,
-                all_pivots=all_pivots
-            )
-
-            self.log(f"Report saved: {output_path}")
-
-            #Save to Database
-            self.update_status("Saving to database...", "blue")
-
-
-            db = DatabaseManager(
-                host="15.46.29.115",
-                database="quality_sandbox",
-                username="pavithra_030226",
-                password=urllib.parse.quote_plus("pavithra@030226"),
-                db_type="mysql"
-            )
-
-            db.create_tables()
-            db.insert_summary(summary_data, year, quarter)
-            db.close()
+            self.log(f"Printer: {result['printer']} {result['variant']}")
+            self.log(f"Sub-Assembly: {result['sub_assembly']}")
+            self.log(f"Report saved: {result['output_path']}")
 
             self.update_status("Complete! ✓", "green")
-            self.log("PROCESS COMPLETED SUCCESSFULLY")
 
         except Exception as e:
-            error_msg = str(e)
-            self.log(f"\n✗ ERROR: {error_msg}")
 
             import traceback
+
             self.log(traceback.format_exc())
 
             self.update_status("Error! ✗", "red")
 
             self.root.after(
                 0,
-                lambda msg=error_msg: messagebox.showerror(
-                    "Error",
-                    f"Error generating pivot tables:\n\n{msg}"
-                )
+                lambda: messagebox.showerror("Error", str(e))
             )
 
         finally:
@@ -264,7 +194,6 @@ def main():
     root = tk.Tk()
     app = PivotGeneratorApp(root)
     root.mainloop()
-
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,11 @@
-from engine.database_manager import DatabaseManager
-from sqlalchemy import text
-import urllib.parse
+"""
+clear_db.py - Clear all data from summary table
+"""
 
+import urllib.parse
+from engine.database_manager import DatabaseManager
+
+# Connect to database
 db = DatabaseManager(
     host="15.46.29.115",
     database="quality_sandbox",
@@ -10,22 +14,18 @@ db = DatabaseManager(
     db_type="mysql"
 )
 
-with db.engine.connect() as conn:
+try:
+    # Clear all data
+    with db.conn.cursor() as cursor:
+        cursor.execute("DELETE FROM summary")
+        rows_deleted = cursor.rowcount
+        print(f"✓ Deleted {rows_deleted} rows from summary table")
+    
+    # Verify
+    with db.conn.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM summary")
+        count = cursor.fetchone()[0]
+        print(f"✓ Table now has {count} rows")
 
-    # Disable foreign key checks
-    conn.execute(text("SET FOREIGN_KEY_CHECKS = 0;"))
-
-    # Get all tables
-    result = conn.execute(text("SHOW TABLES;"))
-    tables = [row[0] for row in result]
-
-    for table in tables:
-        print(f"Clearing {table}...")
-        conn.execute(text(f"TRUNCATE TABLE `{table}`;"))
-
-    # Enable foreign key checks
-    conn.execute(text("SET FOREIGN_KEY_CHECKS = 1;"))
-
-    conn.commit()
-
-print("✅ Database cleared successfully!")
+finally:
+    db.close()

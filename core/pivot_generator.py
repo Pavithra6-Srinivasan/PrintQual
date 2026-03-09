@@ -76,7 +76,7 @@ class UnifiedPivotGenerator:
 
             if "adf" in first_test:
                 self.sub_assembly = "ADF"
-            elif "paperpath" in first_test or "cuslt" in first_test:
+            elif any(keyword in first_test for keyword in ["paperpath", "cuslt", "life test"]):
                 self.sub_assembly = "Paperpath"
 
         # Fallback to Program & SKU if still None

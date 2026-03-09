@@ -6,7 +6,7 @@ class LLMService:
         self.model = "llama3.1:8b"
         self.chat_history = []
 
-    def ask(self, system_prompt, user_message):
+    def ask(self, system_prompt, user_message, timeout=30):
 
         self.chat_history.append({"role": "user", "content": user_message})
 
@@ -24,9 +24,9 @@ class LLMService:
             json={
                 "model": self.model,
                 "prompt": conversation,
-                "stream": False
+                "stream": False,
             },
-            timeout=None
+            timeout=timeout
         )
 
         result = response.json()["response"].strip()

@@ -81,7 +81,7 @@ def create_widgets(app):
     
     # Generate Button
     row += 1
-    app.generate_btn = ttk.Button(main_frame, text="Generate Pivot Tables",
+    app.generate_btn = ttk.Button(main_frame, text="Generate Report",
                                   command=app.generate_pivots)
     app.generate_btn.grid(row=row, column=0, columnspan=3, pady=20)
 

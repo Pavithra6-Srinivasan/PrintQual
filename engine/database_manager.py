@@ -1,6 +1,7 @@
 import pymysql
 from pymysql.err import OperationalError, ProgrammingError
 import urllib.parse
+from sqlalchemy import text
 
 class DatabaseManager:
     """
@@ -78,6 +79,79 @@ class DatabaseManager:
                     )
 
             print(f"✓ Inserted summary data for year={year}, quarter={quarter}")
+    
+    def get_all_quarters(self):
+        """Get list of all quarters in database"""
+        query = """
+            SELECT DISTINCT year, quarter
+            FROM summary
+            ORDER BY year DESC, quarter DESC
+        """
+        
+        with self.conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(query)
+            return cursor.fetchall()
+    
+    def get_quarter_summary(self, year, quarter):
+        """Get summary for a specific quarter"""
+        query = """
+            SELECT category, media_type, overall_result, common_failure_factor
+            FROM summary
+            WHERE year = %s AND quarter = %s
+            ORDER BY category, media_type
+        """
+        
+        with self.conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(query, (year, quarter))
+            return cursor.fetchall()
+
+    def get_quarter_trends(self):
+
+        query = """
+            SELECT
+                year,
+                quarter,
+                category,
+                media_type,
+                overall_result
+            FROM summary
+            ORDER BY category, media_type, year, quarter
+        """
+
+        with self.conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(query)
+            rows = cursor.fetchall()
+
+        trends = []
+        grouped = {}
+
+        for r in rows:
+            key = (r["category"], r["media_type"])
+
+            if key not in grouped:
+                grouped[key] = []
+
+            grouped[key].append((r["year"], r["quarter"], r["overall_result"]))
+
+        for (category, media), values in grouped.items():
+
+            if len(values) < 2:
+                continue
+
+            # Simple trend logic: check if latest result became FAIL
+            prev_result = values[-2][2]
+            latest_result = values[-1][2]
+
+            if prev_result == "PASS" and latest_result == "FAIL":
+
+                trends.append({
+                    "category": category,
+                    "media_type": media,
+                    "trend_description":
+                        f"Result changed from PASS to FAIL in latest quarter"
+                })
+
+        return trends
 
     def close(self):
         if self.conn:
