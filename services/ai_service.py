@@ -123,8 +123,6 @@ You are a printer reliability engineer with access to historical trend data.
 
 Provide helpful insights based on historical trends.
 
-If the question is about current/recent test results, remind the user to generate a pivot report first.
-
 Answer briefly and professionally.
 """
 
@@ -135,7 +133,6 @@ Historical Trends:
 User Question:
 {question}
 
-Note: If user asks about current test results, tell them to generate a pivot report first.
 """
                 
                 return self.llm.ask(system_prompt, prompt)
@@ -148,7 +145,7 @@ You are a printer quality testing expert.
 
 Provide general guidance about printer quality testing, defect types, and best practices.
 
-If the user asks about specific test results, tell them to generate a pivot report first.
+If the user asks about specific test results, give me proper analysis that are specific as possible.
 
 Answer briefly and professionally.
 """

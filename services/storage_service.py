@@ -120,7 +120,41 @@ class StorageService:
                     highlight_threshold=0.5,
                     total_column_name=config.total_column_name
                 )
+    def save_results_to_database(self, db, all_pivots, year, quarter):
+            """
+            Store pass/fail results per Unit and Media into database.
+            """
 
+            for category_name, pivot_data in all_pivots.items():
+
+                unit_df = pivot_data["unit"]
+
+                for _, row in unit_df.iterrows():
+
+                    unit = row["Unit"]
+
+                    for column in unit_df.columns:
+
+                        if column in ["Unit", "Grand Total"]:
+                            continue
+
+                        value = row[column]
+
+                        if pd.isna(value):
+                            continue
+
+                        # Fail if defect count > 0
+                        result = "Fail" if value > 0 else "Pass"
+
+                        db.insert_test_result(
+                            category=category_name,
+                            unit=unit,
+                            media_type=column,
+                            result=result,
+                            year=year,
+                            quarter=quarter
+                        )
+                        
     def detect_common_factors_vertical(self, failed_list, media_type):
         """
         Returns dominant failure factors vertically.

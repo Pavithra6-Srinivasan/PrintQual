@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from pathlib import Path
 from datetime import datetime
+import time
 import threading
 
 from ui_builder import create_widgets
@@ -30,6 +31,7 @@ class PivotGeneratorApp:
 
         self.ai_service = AIService()
         self.latest_summary_text = None
+        self.ai_thinking = False
 
     def browse_raw_data(self):
         """Browse for raw data file."""
@@ -87,6 +89,7 @@ class PivotGeneratorApp:
             return
 
         self.ai_entry.delete(0, tk.END)
+        self.ai_thinking = True
 
         # Show user question immediately
         self.ai_chat.config(state='normal')
@@ -94,7 +97,6 @@ class PivotGeneratorApp:
         try:
             content = self.ai_chat.get("1.0", "end")
             if "Thinking..." in content:
-                # Find and delete the "Thinking..." line
                 lines = content.split('\n')
                 new_content = '\n'.join([l for l in lines if "Thinking..." not in l])
                 self.ai_chat.delete("1.0", "end")
@@ -102,6 +104,10 @@ class PivotGeneratorApp:
         except:
            pass        
         
+        # Start loading animation
+        self.update_status("AI thinking", "orange")
+        threading.Thread(target=self.loading_animation, daemon=True).start()
+
         self.ai_chat.config(state='disabled')
         self.ai_chat.see(tk.END)
 
@@ -112,20 +118,64 @@ class PivotGeneratorApp:
         )
         thread.start()
 
-    def ask_ai_worker(self, question):
-        try:
-            if self.latest_summary_text:
-                response = self.ai_service.analyze_with_context(...)
-            else:
-                response = self.ai_service.answer_question(...)
-            
-            # Actually display the response!
-            self.root.after(0, lambda: self.display_ai_response(question, response))
-            self.root.after(0, lambda: self.update_status("Ready", "green"))
-        except Exception as e:
-            self.root.after(0, lambda: self.update_status("AI Error", "red"))
+    def loading_animation(self):
+            """Animated dots while AI is thinking"""
+            dots = 0
+            while self.ai_thinking:
+                # Update chat with animated dots
+                self.root.after(0, lambda d=dots: self.update_loading_dots(d))
+                dots = (dots + 1) % 4
+                time.sleep(0.5)
 
-    def display_ai_response(self, question, response):
+    def update_loading_dots(self, dots):
+            """Update the loading dots in chat"""
+            if not self.ai_thinking:
+                return
+                
+            self.ai_chat.config(state='normal')
+            
+            # Get last line
+            last_line = self.ai_chat.get("end-2l", "end-1l")
+            
+            # If it's the AI: line, add dots
+            if last_line.startswith("AI: "):
+                # Remove old dots
+                self.ai_chat.delete("end-2l", "end-1l")
+                # Add new dots
+                dot_text = "." * dots if dots > 0 else ""
+                self.ai_chat.insert("end-1l", f"AI: {dot_text}\n")
+            
+            self.ai_chat.config(state='disabled')
+            self.ai_chat.see(tk.END)
+
+    def ask_ai_worker(self, question):
+        """Background worker for AI processing"""
+        try:
+            # Detect question type
+            trend_keywords = ['quarter', 'trend', 'compare', 'history', 'over time', 'across']
+            is_trend_question = any(kw in question.lower() for kw in trend_keywords)
+            
+            # Route to appropriate AI method
+            if is_trend_question:
+                response = self.ai_service.analyze_trends(question)
+            elif self.latest_summary_text:
+                response = self.ai_service.analyze_with_context(question, self.latest_summary_text)
+            else:
+                response = self.ai_service.answer_question(question)
+            
+            # Display response
+            self.root.after(0, lambda: self.display_ai_response(response))            
+            self.root.after(0, lambda: self.update_status("Ready", "green"))
+            
+        except Exception as e:
+            error_msg = str(e)
+            self.root.after(0, lambda: self.update_status("AI Error", "red"))
+            self.root.after(0, lambda msg=error_msg: self.display_ai_error(msg))
+        
+        finally:
+            self.ai_thinking = False
+
+    def display_ai_response(self, response):
         """Display AI chat response in clean chat format."""
 
         self.ai_chat.config(state='normal')
@@ -134,12 +184,26 @@ class PivotGeneratorApp:
             last_line = self.ai_chat.get("end-2l", "end-1l").strip()
             if "Thinking..." in last_line:
                 self.ai_chat.delete("end-2l", "end-1l")
-        except:
-            pass
+        except Exception as e:
+            print(f"Display error: {e}")
 
-        self.ai_chat.insert(tk.END, f"\nYou: {question}\n")
-        self.ai_chat.insert(tk.END, f"AI: {response}\n")
+        self.ai_chat.insert(tk.END, f"{response}\n")
 
+        self.ai_chat.config(state='disabled')
+        self.ai_chat.see(tk.END)
+
+    def display_ai_error(self, error_msg):
+        """Display AI error in chat"""
+        self.ai_chat.config(state='normal')
+        
+        # Remove loading dots
+        last_line = self.ai_chat.get("end-2l", "end-1l")
+        if last_line.startswith("AI: "):
+            self.ai_chat.delete("end-2l", "end-1l")
+        
+        # Show error
+        self.ai_chat.insert(tk.END, f"AI: ❌ Error: {error_msg}\n")
+        self.ai_chat.insert(tk.END, "Try asking a simpler question or check that Ollama is running.\n")
         self.ai_chat.config(state='disabled')
         self.ai_chat.see(tk.END)
 

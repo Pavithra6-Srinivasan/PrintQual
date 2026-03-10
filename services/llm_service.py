@@ -6,7 +6,7 @@ class LLMService:
         self.model = "llama3.1:8b"
         self.chat_history = []
 
-    def ask(self, system_prompt, user_message, timeout=30):
+    def ask(self, system_prompt, user_message, timeout=120):
 
         self.chat_history.append({"role": "user", "content": user_message})
 
