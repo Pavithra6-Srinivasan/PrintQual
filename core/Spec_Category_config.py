@@ -268,18 +268,18 @@ PQ_CONFIG = SpecCategoryConfig(
 # ============================================================================
 
 ADF_INTERVENTION_CONFIG = SpecCategoryConfig(
-    name="ADF Intervention",
+    name="Intervention",
     error_column_config={
         'ADF No Pick': ['ADF No Pick_Top (Top 5 sheets)', 'ADF No Pick_Middle', 'ADF No Pick_Bottom (Last 5 sheets)', 'ADF No Pick_ Last Sheet'],
         'ADF Multipick': ['ADF MP_Top (Top 5 sheets)', 'ADF MP_Middle', 'ADF MP_Bottom (Last 5 sheets)', 'ADF MP_2nd Last sheets'],
         'ADF Jam': ['ADF Jam Z1', 'ADF Jam_Z2', 'ADF Jam_Z3', 'ADF Jam_Z4', 'ADF Jam_Z5', 'ADF Jam_Z6', 'ADF Jam_Z7'],
         'ADF Stall': ['ADF Stall_Z1', 'ADF Stall_Z2', 'ADF Stall_Z3', 'ADF Stall_Z4', 'ADF Stall_Z5', 'ADF Stall_Z6', 'ADF Stall_Z7']
     },
-    total_column_name="Sum of Total ADF Intervention"
+    total_column_name="Sum of Total Intervention"
 )
 
 ADF_SOFT_ERROR_CONFIG = SpecCategoryConfig(
-    name="ADF Soft Error",
+    name="Soft Error",
     error_column_config={
         'Target Dent': 'Target Dent',
         'Target Tear': 'Target Tear',
@@ -316,11 +316,11 @@ ADF_SOFT_ERROR_CONFIG = SpecCategoryConfig(
         'FB TOF Drag_S1': 'FB TOF Drag_S1',
         'FB Bottom Drag_S1': 'FB Bottom Drag_S1'
     },
-    total_column_name="Sum of Total ADF Soft Error"
+    total_column_name="Sum of Total Soft Error"
 )
 
 ADF_IMAGE_QUALITY_CONFIG = SpecCategoryConfig(
-    name="ADF Image Quality",
+    name="Image Quality",
     error_column_config={
         '1 Vertical Line': ['1 Vertical Line_S1', '1 Vertical Line_(S1)', '1 Vertical Line_S2', '1 Vertical Line_(S2)'],
         'Multiple Vertical Lines': ['Multiple Vertical Lines_S1', 'Multiple Vertical Lines_(S1)', 'Multiple Vertical Lines_S2', 'Multiple Vertical Lines_(S2)'],
@@ -350,11 +350,11 @@ ADF_IMAGE_QUALITY_CONFIG = SpecCategoryConfig(
         'Image Distort BOF': ['Image Distort BOF', 'Image Crop BOF'],
         'Image Distort TOF': ['Image Distort TOF', 'Image Crop TOF']
     },
-    total_column_name="Sum of Total ADF Image Quality"
+    total_column_name="Sum of Total Image Quality"
 )
 
 ADF_OTHER_ISSUE_CONFIG = SpecCategoryConfig(
-    name="ADF Other Issue",
+    name="Other Issue",
     error_column_config={
         'False Detection': 'False Detection',
         'False DFJ': 'False DFJ',
@@ -398,11 +398,11 @@ ADF_OTHER_ISSUE_CONFIG = SpecCategoryConfig(
         'Top Black Bar_S1': 'Top Black Bar_S1',
         'Top Black Bar_S2': 'Top Black Bar_S2'
     },
-    total_column_name="Sum of Total ADF Other Issue"
+    total_column_name="Sum of Total Other Issue"
 )
 
 ADF_SKEW_CONFIG = SpecCategoryConfig(
-    name="ADF Skew",
+    name="Skew",
     error_column_config={
         'Obvious COPY TOP skew (>20)_Copy _S1': 'Obvious COPY TOP skew (>20)_Copy _S1',
         'Obvious COPY TOP skew (<20)_Copy _S1': 'Obvious COPY TOP skew (<20)_Copy _S1',
@@ -418,7 +418,7 @@ ADF_SKEW_CONFIG = SpecCategoryConfig(
         'Obvious COPY FEED skew (<10)_Copy _S1': 'Obvious COPY FEED skew (<10)_Copy _S1',
         'Obvious COPY FEED skew (<-10)_Copy _S1': 'Obvious COPY FEED skew (<-10)_Copy _S1'
     },
-    total_column_name="Sum of Total ADF Skew"
+    total_column_name="Sum of Total Skew"
 )
 
 # ============================================================================

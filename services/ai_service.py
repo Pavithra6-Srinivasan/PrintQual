@@ -2,13 +2,11 @@
 ai_service.py
 
 Handles AI trend analysis using database historical data.
-Updated to support both context-based and general queries.
 """
 
 import urllib.parse
 from engine.database_manager import DatabaseManager
 from services.llm_service import LLMService
-
 
 class AIService:
 
@@ -143,10 +141,8 @@ Note: If user asks about current test results, tell them to generate a pivot rep
                 return self.llm.ask(system_prompt, prompt)
             
         except Exception as e:
-            # Database query failed - continue to general mode
-            pass
+            print(f"Database trend query failed: {e}")
         
-        # No historical data - provide general guidance
         system_prompt = """
 You are a printer quality testing expert.
 

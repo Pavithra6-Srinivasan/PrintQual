@@ -10,15 +10,13 @@ class SpecValidator:
         self.sheet_name = sheet_name
         self.spec_category = spec_category
 
-        # product here is already the VARIANT (Hi / Base / SF)
+        # product here is already the VARIANT
         self.product = str(product).strip().lower() if product else None
         self.sub_assembly = str(sub_assembly).strip().lower() if sub_assembly else None
 
         self.spec_df = self.load_specs()
 
-    # ---------------------------------------------------------
     # LOAD SPEC SHEET
-    # ---------------------------------------------------------
     def load_specs(self):
         df = pd.read_excel(self.spec_file_path, sheet_name=self.sheet_name)
 
@@ -38,9 +36,7 @@ class SpecValidator:
 
         return df.reset_index(drop=True)
 
-    # ---------------------------------------------------------
     # EXTRACT CONTEXT FROM PIVOT ROW
-    # ---------------------------------------------------------
     def extract_test_context(self, pivot_row):
 
         context = {}
@@ -68,18 +64,16 @@ class SpecValidator:
 
         return context
     
-    # ---------------------------------------------------------
     # MATCH SINGLE CELL
-    # ---------------------------------------------------------
     def cell_matches(self, spec_cell, pivot_value):
         """
         Returns True if:
-        - spec cell is blank (wildcard)
+        - spec cell is blank
         - pivot_value exists inside comma-separated spec cell
         """
 
         if pd.isna(spec_cell):
-            return True  # blank spec cell = wildcard
+            return True
 
         spec_cell = str(spec_cell).strip().lower()
 
@@ -91,9 +85,7 @@ class SpecValidator:
 
         return pivot_value in options
 
-    # ---------------------------------------------------------
     # COLUMN-BY-COLUMN ELIMINATION
-    # ---------------------------------------------------------
     def find_best_spec_row(self, context):
 
         df = self.spec_df.copy()
@@ -136,9 +128,7 @@ class SpecValidator:
 
         return df.iloc[0]
 
-    # ---------------------------------------------------------
     # FINAL EVALUATION
-    # ---------------------------------------------------------
     def evaluate(self, pivot_row, total_per_k_col):
 
         context = self.extract_test_context(pivot_row)

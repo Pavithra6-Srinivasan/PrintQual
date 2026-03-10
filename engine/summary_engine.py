@@ -4,8 +4,6 @@ summary_engine.py
 Analyzes generated pivot tables and produces summary insights.
 """
 
-import pandas as pd
-
 class PivotSummaryEngine:
     def __init__(self, all_pivots: dict):
         """
@@ -57,11 +55,8 @@ class PivotSummaryEngine:
             "fail_rate": 0
         }
 
-        # -----------------------------
         # CATEGORY LEVEL
-        # -----------------------------
         if "Result" in media_df.columns:
-            # Normalize result column
             media_df["Result"] = (
                 media_df["Result"]
                 .astype(str)
@@ -77,9 +72,7 @@ class PivotSummaryEngine:
             result["total_fail"] = int(fail_count)
             result["fail_rate"] = round((fail_count / total) * 100, 2) if total > 0 else 0
 
-        # -----------------------------
         # MEDIA TYPE LEVEL
-        # -----------------------------
         if "Media Type" in media_df.columns:
 
             grouped = media_df.groupby("Media Type")
@@ -111,9 +104,7 @@ class PivotSummaryEngine:
                     "failed_combinations": failed_combos
                 })
 
-        # -----------------------------
         # UNIT LEVEL
-        # -----------------------------
         if "Unit" in unit_df.columns:
             unit_df["Result"] = (
                 unit_df["Result"]

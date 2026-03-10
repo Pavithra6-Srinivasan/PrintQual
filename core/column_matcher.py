@@ -1,10 +1,8 @@
 import pandas as pd
-import numpy as np
-from pathlib import Path
 
 def standardize_column_names(df, column_aliases):
     """
-    Rename columns in df using provided alias dictionary.
+    Rename columns in df using provided dictionary.
     """
     df = df.copy()
     
@@ -21,8 +19,6 @@ def standardize_column_names(df, column_aliases):
 def prepare_error_columns(raw_data, config):
     """
     Process error columns based on configuration.
-    Returns:
-        processed_df, error_output_columns
     """
 
     processed_data = raw_data.copy()
@@ -71,7 +67,6 @@ def prepare_error_columns(raw_data, config):
                 else:
                     print(f"  ✗ Warning: Column '{input_spec}' not found")
 
-        # Ensure Tpages numeric
         if 'Tpages' in processed_data.columns:
             col = processed_data['Tpages']
 

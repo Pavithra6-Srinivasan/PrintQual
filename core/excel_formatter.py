@@ -63,7 +63,6 @@ class ExcelFormatter:
         if bold_columns:
             for col_name in bold_columns:
                 if col_name in dataframe.columns:
-                    # +1 because Excel columns are 1-indexed
                     bold_col_indices.append(list(dataframe.columns).index(col_name) + 1)
         
         # Find which column contains Media Name or Unit (the one with Grand Total)

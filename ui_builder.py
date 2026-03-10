@@ -95,9 +95,7 @@ def create_widgets(app):
     app.status_label = ttk.Label(main_frame, text="Ready", foreground="blue")
     app.status_label.grid(row=row, column=0, columnspan=3, pady=5)
 
-    # ============================
-    # LOG / DETECTION SECTION
-    # ============================
+    # LOG SECTION
 
     row += 1
     ttk.Label(main_frame, text="Detection Summary:", 
@@ -120,9 +118,7 @@ def create_widgets(app):
         pady=5
     )
 
-    # ============================
     # AI CHAT SECTION
-    # ============================
 
     row += 1
     ttk.Label(main_frame, text="Ask AI:", 
@@ -175,7 +171,7 @@ Instructions:
               foreground="gray").grid(row=row, column=0,
                                         columnspan=3, pady=10, sticky=tk.W)
     
-    for i in range(20):  # adjust range if needed
+    for i in range(20):
         main_frame.rowconfigure(i, weight=0)
 
     # Make text areas expandable

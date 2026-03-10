@@ -1,12 +1,12 @@
 import pymysql
-from pymysql.err import OperationalError, ProgrammingError
+from pymysql.err import OperationalError
 import urllib.parse
-from sqlalchemy import text
 
 class DatabaseManager:
     """
     Manages database connection and summary insertion for Life Test reports.
     """
+
     def __init__(self, host, database, username, password, db_type="mysql"):
         self.host = host
         self.database = database
@@ -34,6 +34,8 @@ class DatabaseManager:
         """
         Creates the summary table if it does not exist.
         """
+
+        self.ensure_connection()
         with self.conn.cursor() as cursor:
             create_sql = """
             CREATE TABLE IF NOT EXISTS summary (
@@ -52,10 +54,9 @@ class DatabaseManager:
     def insert_summary(self, summary_data, year, quarter):
         """
         Inserts summary data into the database.
-        summary_data should have the structure:
-        summary_data['categories'][i]['media_summary'][j] -> dict with keys:
-        'category', 'media_type', 'overall_result', 'common_failure_factor'
         """
+        
+        self.ensure_connection()
         if not summary_data or "categories" not in summary_data:
             raise ValueError("Invalid summary_data format")
 
@@ -82,6 +83,8 @@ class DatabaseManager:
     
     def get_all_quarters(self):
         """Get list of all quarters in database"""
+        
+        self.ensure_connection()
         query = """
             SELECT DISTINCT year, quarter
             FROM summary
@@ -94,6 +97,8 @@ class DatabaseManager:
     
     def get_quarter_summary(self, year, quarter):
         """Get summary for a specific quarter"""
+        
+        self.ensure_connection()
         query = """
             SELECT category, media_type, overall_result, common_failure_factor
             FROM summary
@@ -106,6 +111,8 @@ class DatabaseManager:
             return cursor.fetchall()
 
     def get_quarter_trends(self):
+
+        self.ensure_connection()
 
         query = """
             SELECT
@@ -152,6 +159,15 @@ class DatabaseManager:
                 })
 
         return trends
+
+    def ensure_connection(self):
+        """
+        Reconnect if the database connection was closed.
+        """
+        try:
+            self.conn.ping(reconnect=True)
+        except:
+            self.connect()
 
     def close(self):
         if self.conn:

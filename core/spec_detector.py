@@ -1,8 +1,5 @@
 import re
 
-import pandas as pd
-from core.auto_header_detector import find_header_row
-
 def detect_spec_sheet(raw_df):
     """
     Detect which sheet in the spec file to use.
@@ -41,7 +38,7 @@ def extract_year_quarter(filename: str):
 
         name = filename.upper()
 
-        # Pattern 1: FY25Q1
+        # Pattern 1: FY__Q_
         match = re.search(r'FY(\d{2})Q([1-4])', name)
         if match:
             fy = int(match.group(1))
@@ -49,7 +46,7 @@ def extract_year_quarter(filename: str):
             year = 2000 + fy
             return year, quarter
 
-        # Pattern 2: Q1FY25
+        # Pattern 2: Q_FY__
         match = re.search(r'Q([1-4])FY(\d{2})', name)
         if match:
             quarter = int(match.group(1))

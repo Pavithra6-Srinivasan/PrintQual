@@ -1,6 +1,5 @@
 from core.excel_formatter import ExcelFormatter
 import pandas as pd
-from pathlib import Path
 from openpyxl.styles import Font, PatternFill, Alignment
 
 class StorageService:
@@ -31,7 +30,6 @@ class StorageService:
             for cat in summary_data["categories"]:
                 for media in cat["media_summary"]:
 
-                    # ALWAYS initialize first
                     failure_text = ""
 
                     if media["overall_result"].upper() == "FAIL":
@@ -93,8 +91,7 @@ class StorageService:
                 length = max(len(str(cell.value)) if cell.value else 0 for cell in column_cells)
                 summary_ws.column_dimensions[column_cells[0].column_letter].width = length + 2
 
-            # WRITE & FORMAT ALL PIVOT TABLES
-
+            # Format for all tables
             for category_name, pivot_data in all_pivots.items():
 
                 config = pivot_data["config"]
@@ -102,7 +99,6 @@ class StorageService:
                 media_sheet = f"{category_name} By Media"[:31]
                 unit_sheet = f"{category_name} By Unit"[:31]
 
-                # Write pivot tables
                 pivot_data["media"].to_excel(writer, sheet_name=media_sheet, index=False)
                 pivot_data["unit"].to_excel(writer, sheet_name=unit_sheet, index=False)
 
@@ -151,9 +147,6 @@ class StorageService:
             key=lambda x: x[1],
             reverse=True
         )
-
-        # Get highest frequency
-        top_count = sorted_factors[0][1]
 
         # Only keep strong drivers (at least 60% dominance)
         threshold = max(1, int(len(failed_list) * 0.6))

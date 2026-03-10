@@ -21,14 +21,11 @@ class PivotGeneratorApp:
         self.root.title("Life Test Data Analysis")
         self.root.geometry("800x550")
         
-        # Variables
         self.raw_data_file = tk.StringVar()
         self.output_folder = tk.StringVar(value=str(Path.cwd()))
         
-        # Spec file is always in current directory
         self.spec_file_path = Path.cwd() / "spec.xlsx"
         
-        # Create UI
         create_widgets(self)
 
         self.ai_service = AIService()
@@ -103,7 +100,7 @@ class PivotGeneratorApp:
                 self.ai_chat.delete("1.0", "end")
                 self.ai_chat.insert("1.0", new_content)
         except:
-            pass        
+           pass        
         
         self.ai_chat.config(state='disabled')
         self.ai_chat.see(tk.END)
@@ -133,7 +130,6 @@ class PivotGeneratorApp:
 
         self.ai_chat.config(state='normal')
 
-        # Remove last line if it's 'Thinking...'
         try:
             last_line = self.ai_chat.get("end-2l", "end-1l").strip()
             if "Thinking..." in last_line:

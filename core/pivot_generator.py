@@ -1,7 +1,7 @@
 """
-Core module for generating pivot tables from raw printer quality test data.
+Generates pivot tables from raw test data.
 
-Handles data loading, column standardization, error aggregation, and pivot
+Handles data loading, column standardization and pivot
 table creation with grand total calculations.
 """
 
@@ -9,8 +9,9 @@ import pandas as pd
 import numpy as np
 from core.auto_header_detector import find_header_row
 from core.spec_validator import SpecValidator
-from core.detector import standardize_column_names, prepare_error_columns
+from core.column_matcher import standardize_column_names, prepare_error_columns
 from core.spec_detector import detect_spec_sheet
+from core.pivot_utils import build_groupby_columns, calculate_per_k_rates, calculate_total_rate, apply_spec_validation
 
 class UnifiedPivotGenerator:
     """
@@ -34,12 +35,7 @@ class UnifiedPivotGenerator:
     }
     
     def __init__(self, raw_data_file, test_config, spec_file_path=None):
-        """
-        Args:
-            raw_data_file: Path to raw data Excel file
-            test_config: TestCategoryConfig object defining the category
-            spec_file_path: Optional path to specification file
-        """
+
         header_row = find_header_row(raw_data_file)
 
         self.raw_data = pd.read_excel(raw_data_file, header=header_row)
@@ -62,7 +58,6 @@ class UnifiedPivotGenerator:
             self.processed_data = result if isinstance(result, pd.DataFrame) else pd.DataFrame()
             self.error_output_columns = []
 
-        # Define numeric columns for aggregation
         self.numeric_columns = ['Tpages'] + self.error_output_columns
         
         # Auto-detect product and sub assembly from raw data
@@ -70,7 +65,7 @@ class UnifiedPivotGenerator:
         self.detected_variant = None
         self.sub_assembly = None
 
-        # Detect from Test Name FIRST (more reliable)
+        # Detect from Test Name if available
         if 'Test Name' in self.raw_data.columns:
             first_test = str(self.raw_data['Test Name'].dropna().iloc[0]).lower()
 
@@ -133,217 +128,69 @@ class UnifiedPivotGenerator:
                 print(f"⚠ Spec validator init failed: {e}")
                 self.spec_validator = None
 
-    def create_pivot_by_media_name(self):
-        """
-        Create pivot table grouped by Media Name.
+    def _create_pivot(self, include_unit=False, include_media_name=False):
 
-        Generates a pivot table that groups data by media type/name, showing
-        error rates (per-K) and totals for each combination of:
-            - Test Condition (always included)
-            - Input Tray (if present)
-            - Media Type (always included)
-            - Print Mode (if present)
-            - Print Quality (if configured)
-            - Media Name (if present)
-        
-        Calculations:
-            1. Sum Tpages and error counts for each group
-            2. Calculate per-K rates: (errors / Tpages) * 1000
-            3. Sum all per-K rates to get total error rate
-            4. Determine Pass/Fail based on threshold specs
-            5. Add grand totals with weighted averages
-        """
+        groupby_cols = build_groupby_columns(
+            self.processed_data,
+            self.config,
+            include_unit=include_unit,
+            include_media_name=include_media_name
+        )
 
-        # Build groupby columns list dynamically based on what's available
-        groupby_cols = []
-        if 'Test Condition' in self.processed_data.columns:
-            groupby_cols.append('Test Condition')
+        agg_dict = {c: "sum" for c in self.numeric_columns if c in self.processed_data.columns}
 
-        if 'Test mode' in self.processed_data.columns:
-            groupby_cols.append('Test mode')
+        pivot = (
+            self.processed_data
+            .groupby(groupby_cols, dropna=False)
+            .agg(agg_dict)
+            .reset_index()
+        )
 
-        if 'Media Cat' in self.processed_data.columns:
-            groupby_cols.append('Media Cat')
+        pivot = calculate_per_k_rates(pivot, self.error_output_columns)
 
-        if 'Input Tray' in self.processed_data.columns:
-            groupby_cols.append('Input Tray')
+        pivot, per_k_cols = calculate_total_rate(
+            pivot,
+            self.error_output_columns,
+            self.config.total_column_name
+        )
 
-        if 'Media Type' in self.processed_data.columns:
-            groupby_cols.append('Media Type')
+        pivot = apply_spec_validation(
+            pivot,
+            self.spec_validator,
+            self.config.total_column_name
+        )
 
-        if 'Print Mode' in self.processed_data.columns:
-            groupby_cols.append('Print Mode')
+        final_cols = groupby_cols + ['Tpages'] + per_k_cols + [self.config.total_column_name]
 
-        for col in self.config.additional_groupby_cols:
-            if col in self.processed_data.columns:
-                groupby_cols.append(col)   
-
-        # Track if Media Name is included (determines if grand totals are needed)
-        has_media_name = False
-        if 'Media Name' in self.processed_data.columns:
-            groupby_cols.append('Media Name')
-            has_media_name = True
-        
-        # Define aggregation rules: sum Tpages and all error columns
-        agg_dict = {col: "sum" for col in self.numeric_columns if col in self.processed_data.columns}
-
-        # Before groupby, ensure each column is a Series
-        for col in agg_dict:
-            if isinstance(self.processed_data[col], pd.DataFrame):
-                self.processed_data[col] = self.processed_data[col].squeeze()
-        
-        # Group and aggregate
-        pivot = self.processed_data.groupby(groupby_cols, dropna=False).agg(agg_dict).reset_index()
-        
-        # Calculate per-K rate for each error column
-        # Formula: (errors / Tpages) * 1000 = errors per thousand pages
-        for col in self.error_output_columns:
-            col_name = f'{col}/K'
-            pivot[col_name] = ((pivot[col] / pivot['Tpages']) * 1000).round(3)
-        
-        # Calculate total error rate (sum of all per-K rates)
-        per_k_cols = [f'{col}/K' for col in self.error_output_columns]
-        pivot[self.config.total_column_name] = (pivot[per_k_cols].sum(axis=1)).round(3)
-        
-        # Determine Pass/Fail based on spec file if available, otherwise use threshold specs
-        if self.spec_validator:
-            print("  Using spec file for validation...")
-            pivot['Spec Limit'] = None
-            pivot['Result'] = None
-            
-            for idx, row in pivot.iterrows():
-                spec_limit, actual_rate, result = self.spec_validator.evaluate(
-                    pivot_row=row,
-                    total_per_k_col=self.config.total_column_name
-                )
-                pivot.at[idx, 'Spec Limit'] = spec_limit
-                pivot.at[idx, 'Result'] = result
-        else:
-            # No spec file provided - cannot validate
-            print("  ⚠ No spec file provided - skipping validation")
-            pivot['Result'] = 'NO SPEC FILE'
-
-        # Select final columns in desired order
-        final_cols = groupby_cols.copy()
-        final_cols.append('Tpages')        
-        final_cols.extend(per_k_cols)
-        final_cols.append(self.config.total_column_name)
         if self.spec_validator:
             final_cols.append('Spec Limit')
+
         final_cols.append('Result')
-        
+
         pivot = pivot[final_cols]
-        
-        # Add grand totals only if Media Name exists and we have grouping
-        if has_media_name and len(groupby_cols) > 1:
-            grand_total_groupby = groupby_cols[:-1]  # Exclude Media Name
-            pivot = self.add_grand_totals(pivot, grand_total_groupby)
+
+        return pivot, groupby_cols
+
+    def create_pivot_by_media_name(self):
+
+        pivot, groupby_cols = self._create_pivot(include_media_name=True)
+
+        if len(groupby_cols) > 1:
+            pivot = self.add_grand_totals(pivot, groupby_cols[:-1])
 
         return pivot
     
     def create_pivot_by_unit(self):
-        """
-        Create pivot table grouped by Unit (printer unit ID).
 
-        Grouping Columns:
-        - Test Condition (always included)
-        - Input Tray (if present)
-        - Media Type (always included)
-        - Print Mode (if present)
-        - Print Quality (if configured)
-        - Unit (always included)
-        """
+        pivot, groupby_cols = self._create_pivot(include_unit=True)
 
-        # Build groupby columns (same as media pivot, but with Unit instead)
-        groupby_cols = []
-        if 'Test Condition' in self.processed_data.columns:
-            groupby_cols.append('Test Condition')
-
-        if 'Test mode' in self.processed_data.columns:
-            groupby_cols.append('Test mode')
-
-        if 'Media Cat' in self.processed_data.columns:
-            groupby_cols.append('Media Cat')
-
-        if 'Input Tray' in self.processed_data.columns:
-            groupby_cols.append('Input Tray')
-
-        if 'Media Type' in self.processed_data.columns:
-            groupby_cols.append('Media Type')
-
-        if 'Print Mode' in self.processed_data.columns:
-            groupby_cols.append('Print Mode')
-
-        for col in self.config.additional_groupby_cols:
-            if col in self.processed_data.columns:
-                groupby_cols.append(col)        
-        
-        # Always add Unit as the final grouping column
-        groupby_cols.append('Unit')
-        
-        # Aggregation rules
-        agg_dict = {col: "sum" for col in self.numeric_columns if col in self.processed_data.columns}
-
-        # Before groupby, ensure each column is a Series
-        for col in agg_dict:
-            if isinstance(self.processed_data[col], pd.DataFrame):
-                self.processed_data[col] = self.processed_data[col].squeeze()
-        
-        # Group and aggregate
-        pivot = self.processed_data.groupby(groupby_cols, dropna=False).agg(agg_dict).reset_index()
-        
-        # Calculate per-K rate for each error column
-        # Formula: (errors / Tpages) * 1000 = errors per thousand pages 
-        for col in self.error_output_columns:
-            col_name = f'{col}/K'
-            pivot[col_name] = ((pivot[col] / pivot['Tpages']) * 1000).round(3)
-        
-        # Calculate total error rate (sum of all per-K rates)
-        per_k_cols = [f'{col}/K' for col in self.error_output_columns]
-        pivot[self.config.total_column_name] = (pivot[per_k_cols].sum(axis=1)).round(3)
-        
-        # Determine Pass/Fail based on spec file if available, otherwise use threshold specs
-        if self.spec_validator:
-            print("  Using spec file for validation...")
-            pivot['Spec Limit'] = None
-            pivot['Result'] = None
-            
-            for idx, row in pivot.iterrows():
-                spec_limit, actual_rate, result = self.spec_validator.evaluate(
-                    pivot_row=row,
-                    total_per_k_col=self.config.total_column_name
-                )
-                pivot.at[idx, 'Spec Limit'] = spec_limit
-                pivot.at[idx, 'Result'] = result
-        else:
-            # No spec file provided - cannot validate
-            print("  ⚠ No spec file provided - skipping validation")
-            pivot['Result'] = 'NO SPEC FILE'
-        
-        # Select final columns in desired order
-        final_cols = groupby_cols.copy()
-        final_cols.append('Tpages')        
-        final_cols.extend(per_k_cols)
-        final_cols.append(self.config.total_column_name)
-        if self.spec_validator:
-            final_cols.append('Spec Limit')
-        final_cols.append('Result')
-        
-        pivot = pivot[final_cols]
-        grand_total_groupby = groupby_cols[:-1]
-        pivot = self.add_grand_totals(pivot, grand_total_groupby)      
+        pivot = self.add_grand_totals(pivot, groupby_cols[:-1])
 
         return pivot
     
     def add_grand_totals(self, df, groupby_cols):
         """
         Add grand total rows for each combination of grouping columns.
-
-        Calculation Method:
-            - Tpages: sum
-            - Per-K rates: Weighted average using Tpages as weight
-            - Total: Weighted average of total error rate
-            - Result: Pass/Fail based on grand total vs threshold
         """
 
         result_rows = []
@@ -362,7 +209,6 @@ class UnifiedPivotGenerator:
                 grand_total_col = col
                 break
         
-        # If no column for grand total, just return the dataframe as-is
         if grand_total_col is None:
             return df
 
@@ -373,10 +219,8 @@ class UnifiedPivotGenerator:
             for col in groupby_cols:
                 mask = mask & (df[col] == combo[col])
             
-            # Skip if subset is empty
             subset = df[mask].copy()
             
-            # Skip if subset is empty or has only 1 row
             if len(subset) == 0:
                 continue
             
@@ -424,11 +268,10 @@ class UnifiedPivotGenerator:
                 grand_total['Spec Limit'] = spec_limit
                 grand_total['Result'] = result
             else:
-                grand_total['Result'] = 'NO SPEC FILE'
+                grand_total['Result'] = 'NO SPEC PROVIDED'
 
             result_rows.append(grand_total)
         
-        # Concatenate all rows
         if len(result_rows) == 0:
             return df
         
