@@ -3,11 +3,12 @@ import requests
 class LLMService:
     def __init__(self):
         self.url = "http://localhost:11434/api/generate"
-        self.model = "llama3.1:8b"
+        self.model = "qwen2.5"
         self.chat_history = []
 
     def ask(self, system_prompt, user_message, timeout=120):
 
+        self.chat_history = self.chat_history[-5:]
         self.chat_history.append({"role": "user", "content": user_message})
 
         # Build conversation text

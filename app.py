@@ -83,7 +83,7 @@ class PivotGeneratorApp:
         thread.start()
     
     def ask_ai(self):
-        """Ask AI - works independently or with generated pivots"""
+        """works independently or with generated pivots"""
         question = self.ai_entry.get().strip()
         if not question:
             return
@@ -203,7 +203,7 @@ class PivotGeneratorApp:
         
         # Show error
         self.ai_chat.insert(tk.END, f"AI: ❌ Error: {error_msg}\n")
-        self.ai_chat.insert(tk.END, "Try asking a simpler question or check that Ollama is running.\n")
+        self.ai_chat.insert(tk.END, "Try asking a simpler question.\n")
         self.ai_chat.config(state='disabled')
         self.ai_chat.see(tk.END)
 
