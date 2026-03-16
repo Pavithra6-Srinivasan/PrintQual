@@ -1,7 +1,7 @@
 """
-app.py - Life Test Data Analysis Desktop Application
+app.py - MODERN CHAT-LIKE INTERFACE
 
-Simplified local GUI with automatic spec file detection and test type auto-detection.
+ChatGPT-style expanding conversation area
 """
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -15,12 +15,12 @@ from services.ai_service import AIService
 from services.report_pipeline import ReportPipeline
 
 class PivotGeneratorApp:
-    """Desktop GUI for generating pivot tables with auto-detection."""
+    """Desktop GUI with modern chat interface."""
     
     def __init__(self, root):
         self.root = root
         self.root.title("Life Test Data Analysis")
-        self.root.geometry("800x550")
+        self.root.geometry("900x700")  # Taller window
         
         self.raw_data_file = tk.StringVar()
         self.output_folder = tk.StringVar(value=str(Path.cwd()))
@@ -32,6 +32,9 @@ class PivotGeneratorApp:
         self.ai_service = AIService()
         self.latest_summary_text = None
         self.ai_thinking = False
+        
+        # Welcome message
+        self.log_styled("Welcome! Load a raw data file and click 'Generate Report' to begin.", "system")
 
     def browse_raw_data(self):
         """Browse for raw data file."""
@@ -44,25 +47,49 @@ class PivotGeneratorApp:
         )
         if filename:
             self.raw_data_file.set(filename)
+            self.log_styled(f"Selected: {Path(filename).name}", "system")
     
     def browse_output_folder(self):
         """Browse for output folder."""
         folder = filedialog.askdirectory(title="Select Output Folder")
         if folder:
             self.output_folder.set(folder)
-            self.log(f"Output folder: {folder}")
+            self.log_styled(f"Output folder: {folder}", "system")
     
     def log(self, message):
-        """Add message to log."""
-        self.log_text.config(state='normal')
+        """Add system message to chat."""
+        self.log_styled(message, "system")
+    
+    def log_styled(self, message, tag="system"):
+        """Add styled message to chat."""
+        self.ai_chat.config(state='normal')
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
-        self.log_text.see(tk.END)
-        self.log_text.config(state='disabled')
+        
+        if tag == "system":
+            self.ai_chat.insert(tk.END, f"[{timestamp}] ", "system")
+            self.ai_chat.insert(tk.END, f"{message}\n")
+        elif tag == "user":
+            self.ai_chat.insert(tk.END, f"\n💬 You ({timestamp}):\n", "user")
+            self.ai_chat.insert(tk.END, f"{message}\n")
+        elif tag == "ai":
+            self.ai_chat.insert(tk.END, f"\n🤖 AI ({timestamp}):\n", "ai")
+            self.ai_chat.insert(tk.END, f"{message}\n")
+        elif tag == "error":
+            self.ai_chat.insert(tk.END, f"❌ Error: ", "error")
+            self.ai_chat.insert(tk.END, f"{message}\n")
+        
+        self.ai_chat.see(tk.END)
+        self.ai_chat.config(state='disabled')
         self.root.update()
     
     def update_status(self, message, color="blue"):
-        self.status_label.config(text=message, foreground=color)
+        color_map = {
+            "blue": "#0066cc",
+            "green": "#16a34a",
+            "red": "#dc2626",
+            "orange": "#ea580c"
+        }
+        self.status_label.config(text=message, foreground=color_map.get(color, color))
         self.root.update()
     
     def generate_pivots(self):
@@ -83,7 +110,7 @@ class PivotGeneratorApp:
         thread.start()
     
     def ask_ai(self):
-        """works independently or with generated pivots"""
+        """Send question to AI."""
         question = self.ai_entry.get().strip()
         if not question:
             return
@@ -91,25 +118,17 @@ class PivotGeneratorApp:
         self.ai_entry.delete(0, tk.END)
         self.ai_thinking = True
 
-        # Show user question immediately
-        self.ai_chat.config(state='normal')
-        self.ai_chat.insert(tk.END, f"\nYou: {question}\n")
-        try:
-            content = self.ai_chat.get("1.0", "end")
-            if "Thinking..." in content:
-                lines = content.split('\n')
-                new_content = '\n'.join([l for l in lines if "Thinking..." not in l])
-                self.ai_chat.delete("1.0", "end")
-                self.ai_chat.insert("1.0", new_content)
-        except:
-           pass        
+        # Show user question
+        self.log_styled(question, "user")
         
-        # Start loading animation
-        self.update_status("AI thinking", "orange")
-        threading.Thread(target=self.loading_animation, daemon=True).start()
-
-        self.ai_chat.config(state='disabled')
+        # Show thinking indicator
+        self.ai_chat.config(state='normal')
+        self.ai_chat.insert(tk.END, "\n🤖 AI: ", "ai")
+        self.ai_chat.insert(tk.END, "thinking...\n")
         self.ai_chat.see(tk.END)
+        self.ai_chat.config(state='disabled')
+        
+        self.update_status("AI thinking...", "orange")
 
         thread = threading.Thread(
             target=self.ask_ai_worker,
@@ -118,38 +137,8 @@ class PivotGeneratorApp:
         )
         thread.start()
 
-    def loading_animation(self):
-            """Animated dots while AI is thinking"""
-            dots = 0
-            while self.ai_thinking:
-                # Update chat with animated dots
-                self.root.after(0, lambda d=dots: self.update_loading_dots(d))
-                dots = (dots + 1) % 4
-                time.sleep(0.5)
-
-    def update_loading_dots(self, dots):
-            """Update the loading dots in chat"""
-            if not self.ai_thinking:
-                return
-                
-            self.ai_chat.config(state='normal')
-            
-            # Get last line
-            last_line = self.ai_chat.get("end-2l", "end-1l")
-            
-            # If it's the AI: line, add dots
-            if last_line.startswith("AI: "):
-                # Remove old dots
-                self.ai_chat.delete("end-2l", "end-1l")
-                # Add new dots
-                dot_text = "." * dots if dots > 0 else ""
-                self.ai_chat.insert("end-1l", f"AI: {dot_text}\n")
-            
-            self.ai_chat.config(state='disabled')
-            self.ai_chat.see(tk.END)
-
     def ask_ai_worker(self, question):
-        """Background worker for AI processing"""
+        """Background worker for AI processing."""
         try:
             # Detect question type
             trend_keywords = ['quarter', 'trend', 'compare', 'history', 'over time', 'across']
@@ -164,54 +153,62 @@ class PivotGeneratorApp:
                 response = self.ai_service.answer_question(question)
             
             # Display response
-            self.root.after(0, lambda msg=error_msg: self.display_ai_error(msg))
-            self.root.after(0, lambda: self.update_status("AI Error", "red"))
+            self.root.after(0, lambda r=response: self.display_ai_response(r))
+            self.root.after(0, lambda: self.update_status("Ready", "green"))
             
         except Exception as e:
             error_msg = str(e)
-            self.root.after(0, lambda: self.update_status("AI Error", "red"))
             self.root.after(0, lambda msg=error_msg: self.display_ai_error(msg))
+            self.root.after(0, lambda: self.update_status("AI Error", "red"))
         
         finally:
             self.ai_thinking = False
 
     def display_ai_response(self, response):
-        """Display AI chat response in clean chat format."""
-
+        """Display AI response."""
         self.ai_chat.config(state='normal')
-
-        try:
-            last_line = self.ai_chat.get("end-2l", "end-1l").strip()
-            if "Thinking..." in last_line:
-                self.ai_chat.delete("end-2l", "end-1l")
-        except Exception as e:
-            print(f"Display error: {e}")
-
+        
+        # Remove "thinking..." line
+        content = self.ai_chat.get("1.0", tk.END)
+        if "thinking..." in content:
+            # Find and remove the thinking line
+            lines = content.split('\n')
+            new_lines = [l for l in lines if "thinking..." not in l]
+            self.ai_chat.delete("1.0", tk.END)
+            self.ai_chat.insert("1.0", '\n'.join(new_lines))
+        
+        # Add actual response
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.ai_chat.insert(tk.END, f"\n🤖 AI ({timestamp}):\n", "ai")
         self.ai_chat.insert(tk.END, f"{response}\n")
-
-        self.ai_chat.config(state='disabled')
+        
         self.ai_chat.see(tk.END)
+        self.ai_chat.config(state='disabled')
 
     def display_ai_error(self, error_msg):
-        """Display AI error in chat"""
+        """Display AI error."""
         self.ai_chat.config(state='normal')
         
-        # Remove loading dots
-        last_line = self.ai_chat.get("end-2l", "end-1l")
-        if last_line.startswith("AI: "):
-            self.ai_chat.delete("end-2l", "end-1l")
+        # Remove "thinking..." line
+        content = self.ai_chat.get("1.0", tk.END)
+        if "thinking..." in content:
+            lines = content.split('\n')
+            new_lines = [l for l in lines if "thinking..." not in l]
+            self.ai_chat.delete("1.0", tk.END)
+            self.ai_chat.insert("1.0", '\n'.join(new_lines))
         
         # Show error
-        self.ai_chat.insert(tk.END, f"AI: ❌ Error: {error_msg}\n")
+        self.ai_chat.insert(tk.END, "❌ Error: ", "error")
+        self.ai_chat.insert(tk.END, f"{error_msg}\n")
         self.ai_chat.insert(tk.END, "Try asking a simpler question.\n")
-        self.ai_chat.config(state='disabled')
+        
         self.ai_chat.see(tk.END)
+        self.ai_chat.config(state='disabled')
 
     def generate_worker(self):
-
+        """Background worker for report generation."""
         try:
-
-            self.update_status("Starting generation...", "blue")
+            self.update_status("Generating...", "blue")
 
             raw_file = self.raw_data_file.get()
             spec_file = str(self.spec_file_path) if self.spec_file_path.exists() else None
@@ -226,9 +223,10 @@ class PivotGeneratorApp:
 
             self.latest_summary_text = result["summary_text"]
 
-            self.log(f"Printer: {result['printer']} {result['variant']}")
-            self.log(f"Sub-Assembly: {result['sub_assembly']}")
-            self.log(f"Report saved: {result['output_path']}")
+            self.log(f"✓ Printer: {result['printer']} {result['variant']}")
+            self.log(f"✓ Sub-Assembly: {result['sub_assembly']}")
+            self.log(f"✓ Quarter: Q{result['quarter']} FY{result['year']}")
+            self.log(f"✓ Report saved: {Path(result['output_path']).name}")
 
             self.update_status("Complete! ✓", "green")
 
@@ -237,10 +235,15 @@ class PivotGeneratorApp:
             error_trace = traceback.format_exc()
             error_msg = str(e)
             
-            self.log(error_trace)
+            self.log_styled(error_msg, "error")
+            print(error_trace)  # Print to console
             self.update_status("Error! ✗", "red")
             
             self.root.after(0, lambda msg=error_msg: messagebox.showerror("Error", msg))
+
+        finally:
+            self.root.after(0, lambda: self.generate_btn.config(state='normal'))
+            self.root.after(0, lambda: self.progress.stop())
 
 def main():
     """Main entry point."""

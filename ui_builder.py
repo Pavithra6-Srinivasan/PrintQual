@@ -1,180 +1,174 @@
 """
-ui_builder.py
-Handles all UI widget creation and layout for the PivotGeneratorApp.
+ui_builder.py - MODERN CHAT-LIKE INTERFACE
+
+ChatGPT-style layout:
+- Top: File selection and controls (compact)
+- Middle: Expanding chat area (grows with content)
+- Bottom: Fixed AI input bar
 """
 
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 
-
 def create_widgets(app):
-    """Create all UI widgets and attach them to the app instance."""
-
-    # Create scrollable canvas
-    canvas = tk.Canvas(app.root)
-    scrollbar = ttk.Scrollbar(app.root, orient="vertical", command=canvas.yview)
-
-    scrollable_frame = ttk.Frame(canvas, padding="10")
-
-    scrollable_frame.bind(
-        "<Configure>",
-        lambda e: canvas.configure(
-            scrollregion=canvas.bbox("all")
-        )
-    )
-
-    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-    canvas_window = canvas.create_window(
-        (0, 0),
-        window=scrollable_frame,
-        anchor="nw"
-    )
-
-    def resize_frame(event):
-        canvas.itemconfig(canvas_window, width=event.width)
-
-    canvas.bind("<Configure>", resize_frame)
-    canvas.configure(yscrollcommand=scrollbar.set)
-
-    def _on_mousewheel(event):
-        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-    canvas.grid(row=0, column=0, sticky="nsew")
-    scrollbar.grid(row=0, column=1, sticky="ns")
-
+    """Create modern chat-like UI."""
+    
+    # Main container
     app.root.columnconfigure(0, weight=1)
     app.root.rowconfigure(0, weight=1)
-
-    main_frame = scrollable_frame
-    main_frame.columnconfigure(1, weight=1)
-
+    
+    main_container = ttk.Frame(app.root)
+    main_container.grid(row=0, column=0, sticky="nsew")
+    main_container.columnconfigure(0, weight=1)
+    main_container.rowconfigure(1, weight=1)  # Chat area expands
+    
+    # ======================
+    # TOP SECTION - Controls (Fixed Height)
+    # ======================
+    top_frame = ttk.Frame(main_container, padding="10")
+    top_frame.grid(row=0, column=0, sticky="nsew")
+    top_frame.columnconfigure(1, weight=1)
+    
     # Title
-    title_label = ttk.Label(main_frame, text="Life Test Data Analysis",
-                            font=('Arial', 16, 'bold'))
-    title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
-
-    # Raw Data File Section
-    row = 1
-    ttk.Label(main_frame, text="Raw Data File:", font=('Arial', 10, 'bold')).grid(
-        row=row, column=0, sticky=tk.W, pady=5
+    title_label = ttk.Label(
+        top_frame, 
+        text="Life Test Data Analysis",
+        font=('Segoe UI', 16, 'bold')
     )
-    ttk.Entry(main_frame, textvariable=app.raw_data_file, width=60).grid(
-        row=row, column=1, sticky="nsew", padx=5
+    title_label.grid(row=0, column=0, columnspan=3, pady=(0, 15))
+    
+    # Raw Data File
+    ttk.Label(top_frame, text="Raw Data File:", font=('Segoe UI', 9)).grid(
+        row=1, column=0, sticky=tk.W, pady=5, padx=(0, 5)
     )
-    ttk.Button(main_frame, text="Browse...", command=app.browse_raw_data).grid(
-        row=row, column=2, padx=5
+    ttk.Entry(top_frame, textvariable=app.raw_data_file, width=50).grid(
+        row=1, column=1, sticky="ew", padx=5
     )
-
-    # Output Folder Section
-    row += 1
-    ttk.Label(main_frame, text="Output Folder:", font=('Arial', 10, 'bold')).grid(
-        row=row, column=0, sticky=tk.W, pady=5
-    )
-    ttk.Entry(main_frame, textvariable=app.output_folder, width=60).grid(
-        row=row, column=1, sticky="nsew", padx=5
-    )
-    ttk.Button(main_frame, text="Browse...", command=app.browse_output_folder).grid(
-        row=row, column=2, padx=5
+    ttk.Button(top_frame, text="Browse", command=app.browse_raw_data).grid(
+        row=1, column=2, padx=(5, 0)
     )
     
-    # Generate Button
-    row += 1
-    app.generate_btn = ttk.Button(main_frame, text="Generate Report",
-                                  command=app.generate_pivots)
-    app.generate_btn.grid(row=row, column=0, columnspan=3, pady=20)
-
+    # Output Folder
+    ttk.Label(top_frame, text="Output Folder:", font=('Segoe UI', 9)).grid(
+        row=2, column=0, sticky=tk.W, pady=5, padx=(0, 5)
+    )
+    ttk.Entry(top_frame, textvariable=app.output_folder, width=50).grid(
+        row=2, column=1, sticky="ew", padx=5
+    )
+    ttk.Button(top_frame, text="Browse", command=app.browse_output_folder).grid(
+        row=2, column=2, padx=(5, 0)
+    )
+    
+    # Generate Button & Status
+    button_frame = ttk.Frame(top_frame)
+    button_frame.grid(row=3, column=0, columnspan=3, pady=10)
+    
+    app.generate_btn = ttk.Button(
+        button_frame, 
+        text="Generate Report",
+        command=app.generate_pivots
+    )
+    app.generate_btn.pack(side=tk.LEFT, padx=5)
+    
+    app.status_label = ttk.Label(
+        button_frame, 
+        text="Ready", 
+        foreground="green",
+        font=('Segoe UI', 9, 'bold')
+    )
+    app.status_label.pack(side=tk.LEFT, padx=10)
+    
     # Progress Bar
-    row += 1
-    app.progress = ttk.Progressbar(main_frame, mode='indeterminate')
-    app.progress.grid(row=row, column=0, columnspan=3, sticky="nsew", pady=5)
-
-    # Status Label
-    row += 1
-    app.status_label = ttk.Label(main_frame, text="Ready", foreground="blue")
-    app.status_label.grid(row=row, column=0, columnspan=3, pady=5)
-
-    # LOG SECTION
-
-    row += 1
-    ttk.Label(main_frame, text="Detection Summary:", 
-            font=('Arial', 10, 'bold')).grid(
-        row=row, column=0, sticky=tk.W, pady=(15, 5)
-    )
-
-    row += 1
-    app.log_text = scrolledtext.ScrolledText(
-        main_frame,
-        height=5,
-        wrap=tk.WORD,
-        state='disabled'
-    )
-    app.log_text.grid(
-        row=row,
-        column=0,
-        columnspan=3,
-        sticky="nsew",
-        pady=5
-    )
-
-    # AI CHAT SECTION
-
-    row += 1
-    ttk.Label(main_frame, text="Ask AI:", 
-            font=('Arial', 10, 'bold')).grid(
-        row=row, column=0, sticky=tk.W, pady=(15, 5)
-    )
-
-    row += 1
-    app.ai_chat = scrolledtext.ScrolledText(
-        main_frame,
-        height=8,
-        wrap=tk.WORD,
-        state='disabled'
-    )
-    app.ai_chat.grid(
-        row=row,
-        column=0,
-        columnspan=3,
-        sticky="nsew",
-        pady=5
-    )
-
-    row += 1
-    app.ai_entry = ttk.Entry(main_frame)
-    app.ai_entry.grid(
-        row=row,
-        column=0,
-        columnspan=2,
-        sticky="nsew",
-        pady=5
-    )
-
-    ttk.Button(
-        main_frame,
-        text="Ask AI",
-        command=app.ask_ai
-    ).grid(row=row, column=2, padx=5)
-
-    # Instructions
-    row += 1
-    instructions = """
-Instructions:
-1. Select your raw data file (Excel format)
-2. Choose output folder
-3. Click \"Generate Pivot Tables\"
-4. System will auto-detect test type (Paperpath/ADF)
-5. Results will be saved to output folder
-    """
-    ttk.Label(main_frame, text=instructions, justify=tk.LEFT,
-              foreground="gray").grid(row=row, column=0,
-                                        columnspan=3, pady=10, sticky=tk.W)
+    app.progress = ttk.Progressbar(top_frame, mode='indeterminate')
+    app.progress.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(0, 5))
     
-    for i in range(20):
-        main_frame.rowconfigure(i, weight=0)
+    # Separator
+    ttk.Separator(top_frame, orient='horizontal').grid(
+        row=5, column=0, columnspan=3, sticky="ew", pady=10
+    )
+    
+    # ======================
+    # MIDDLE SECTION - Chat Area (Expanding)
+    # ======================
+    chat_container = ttk.Frame(main_container)
+    chat_container.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+    chat_container.columnconfigure(0, weight=1)
+    chat_container.rowconfigure(0, weight=1)
+    
+    # Combined Chat/Log Area
+    chat_frame = ttk.LabelFrame(chat_container, text="  Conversation  ", padding="5")
+    chat_frame.grid(row=0, column=0, sticky="nsew")
+    chat_frame.columnconfigure(0, weight=1)
+    chat_frame.rowconfigure(0, weight=1)
+    
+    # Scrollable text area (ChatGPT style)
+    app.ai_chat = scrolledtext.ScrolledText(
+        chat_frame,
+        wrap=tk.WORD,
+        font=('Segoe UI', 10),
+        bg="#f7f7f8",
+        fg="#333333",
+        relief=tk.FLAT,
+        padx=10,
+        pady=10,
+        state='disabled'
+    )
+    app.ai_chat.grid(row=0, column=0, sticky="nsew")
+    
+    # Configure text tags for styling
+    app.ai_chat.tag_config("user", foreground="#0066cc", font=('Segoe UI', 10, 'bold'))
+    app.ai_chat.tag_config("ai", foreground="#16a34a", font=('Segoe UI', 10, 'bold'))
+    app.ai_chat.tag_config("system", foreground="#6b7280", font=('Segoe UI', 9, 'italic'))
+    app.ai_chat.tag_config("error", foreground="#dc2626", font=('Segoe UI', 10))
+    
+    # Also use this for log messages
+    app.log_text = app.ai_chat  # Reuse same widget
+    
+    # ======================
+    # BOTTOM SECTION - AI Input (Fixed)
+    # ======================
+    bottom_frame = ttk.Frame(main_container)
+    bottom_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+    bottom_frame.columnconfigure(0, weight=1)
+    
+    # Input frame
+    input_frame = ttk.Frame(bottom_frame, relief=tk.RAISED, borderwidth=1)
+    input_frame.grid(row=0, column=0, sticky="ew")
+    input_frame.columnconfigure(0, weight=1)
+    
+    # AI Entry
+    app.ai_entry = ttk.Entry(
+        input_frame,
+        font=('Segoe UI', 10)
+    )
+    app.ai_entry.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
+    
+    # Bind Enter key to send
+    app.ai_entry.bind('<Return>', lambda e: app.ask_ai())
+    
+    # Ask Button
+    ask_btn = ttk.Button(
+        input_frame,
+        text="Enter ➤",
+        command=app.ask_ai
+    )
+    ask_btn.grid(row=0, column=1, padx=(0, 10), pady=8)
+    
+    # Hint text
+    hint_label = ttk.Label(
+        bottom_frame,
+        text="💡 Ask about trends, failures, or specific test results (Press Enter to send)",
+        font=('Segoe UI', 8),
+        foreground="#6b7280"
+    )
+    hint_label.grid(row=1, column=0, pady=(5, 0))
 
-    # Make text areas expandable
-    main_frame.rowconfigure(8, weight=1)
-    main_frame.rowconfigure(10, weight=2)
-    main_frame.rowconfigure(12, weight=2)
+# Helper method to add to app.py
+def log_with_style(app, message, tag="system"):
+    """Add styled message to chat."""
+    app.ai_chat.config(state='normal')
+    timestamp = __import__('datetime').datetime.now().strftime("%H:%M:%S")
+    app.ai_chat.insert(tk.END, f"[{timestamp}] ", tag)
+    app.ai_chat.insert(tk.END, f"{message}\n")
+    app.ai_chat.see(tk.END)
+    app.ai_chat.config(state='disabled')

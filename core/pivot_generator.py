@@ -128,7 +128,7 @@ class UnifiedPivotGenerator:
                 print(f"⚠ Spec validator init failed: {e}")
                 self.spec_validator = None
 
-    def _create_pivot(self, include_unit=False, include_media_name=False):
+    def create_pivot(self, include_unit=False, include_media_name=False):
 
         groupby_cols = build_groupby_columns(
             self.processed_data,
@@ -173,7 +173,7 @@ class UnifiedPivotGenerator:
 
     def create_pivot_by_media_name(self):
 
-        pivot, groupby_cols = self._create_pivot(include_media_name=True)
+        pivot, groupby_cols = self.create_pivot(include_media_name=True)
 
         if len(groupby_cols) > 1:
             pivot = self.add_grand_totals(pivot, groupby_cols[:-1])
@@ -182,7 +182,7 @@ class UnifiedPivotGenerator:
     
     def create_pivot_by_unit(self):
 
-        pivot, groupby_cols = self._create_pivot(include_unit=True)
+        pivot, groupby_cols = self.create_pivot(include_unit=True)
 
         pivot = self.add_grand_totals(pivot, groupby_cols[:-1])
 

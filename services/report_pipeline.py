@@ -64,7 +64,7 @@ class ReportPipeline:
         # 6. Save to Excel
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_filename = f"{printer}_{variant}_{sub_assembly}_Q{quarter}FY{year}_Report_{timestamp}.xlsx"
-        output_path = Path(output_folder) / output_filename
+        output_path = Path(output_folder) / "reports" / output_filename
         
         storage_service = StorageService()
         storage_service.save_full_report(
@@ -73,7 +73,7 @@ class ReportPipeline:
             all_pivots=all_pivots
         )
         
-        # 7. Save to database (if enabled)
+        # 7. Save to database
         try:
             db = DatabaseManager(
                 host="15.46.29.115",

@@ -63,7 +63,7 @@ class PivotSummaryEngine:
                 overall_status = "Fail" if (media_group["Result"] == "fail").any() else "Pass"
                 
                 # ENHANCED: Collect detailed failure information
-                failure_details = self._analyze_failures(
+                failure_details = self.analyze_failures(
                     media_type=media_type,
                     media_group=media_group,
                     unit_df=unit_df,
@@ -78,7 +78,7 @@ class PivotSummaryEngine:
 
         return result
 
-    def _analyze_failures(self, media_type, media_group, unit_df, category_name):
+    def analyze_failures(self, media_type, media_group, unit_df, category_name):
         """
         Analyze failures and return detailed, specific information.
         Returns dict with specific failure factors.
@@ -106,7 +106,7 @@ class PivotSummaryEngine:
                 details["failed_conditions"] = [str(c) for c in conditions]
             
             # Analyze which error columns have high defect rates
-            details["failed_error_types"] = self._identify_problem_error_columns(
+            details["failed_error_types"] = self.identify_problem_error_columns(
                 failed_media_rows, 
                 category_name
             )
@@ -131,13 +131,13 @@ class PivotSummaryEngine:
                     details["failed_combinations"].append(" | ".join(combo_parts))
         
         # 2. Check units with failures for this media type
-        failed_units = self._get_failed_units_for_media(unit_df, media_type)
+        failed_units = self.get_failed_units_for_media(unit_df, media_type)
         if failed_units:
             details["failed_units"] = failed_units
         
         return details
 
-    def _identify_problem_error_columns(self, failed_rows, category_name):
+    def identify_problem_error_columns(self, failed_rows, category_name):
         """
         Identify which specific error types (columns) are causing problems.
         Returns list of error column names with high defect rates.
@@ -164,7 +164,7 @@ class PivotSummaryEngine:
         
         return problem_columns
 
-    def _get_failed_units_for_media(self, unit_df, media_type):
+    def get_failed_units_for_media(self, unit_df, media_type):
         """
         Find which units have defects for a specific media type.
         """

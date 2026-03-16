@@ -15,10 +15,9 @@ print("\n[Step 1] Testing database connection...")
 try:
     db = DatabaseManager(
         host="15.46.29.115",
-        database="quality_sandbox",
-        username="pavithra_030226",
-        password=urllib.parse.quote_plus("pavithra@030226"),
-        db_type="mysql"
+        user="pavithra_030226",
+        password="pavithra@030226",
+        database="quality_sandbox"
     )
     print("✓ Database connected")
 except Exception as e:
