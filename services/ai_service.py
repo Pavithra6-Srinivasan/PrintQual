@@ -15,12 +15,11 @@ class AIService:
         self.llm = LLMService()
 
         self.db = DatabaseManager(
-            host="15.46.29.115",
-            database="quality_sandbox",
-            username="pavithra_030226",
-            password=urllib.parse.quote_plus("pavithra@030226"),
-            db_type="mysql"
-        )
+        host="15.46.29.115",
+        user="pavithra_030226",
+        password="pavithra@030226",
+        database="quality_sandbox"
+    )
 
     def analyze_trends(self, question):
         """

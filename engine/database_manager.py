@@ -1,244 +1,192 @@
-import pymysql
-from pymysql.err import OperationalError
-import urllib.parse
+import mysql.connector
+from datetime import datetime
 
 class DatabaseManager:
-    """
-    Manages database connection and summary insertion for Life Test reports.
-    """
-
-    def __init__(self, host, database, username, password, db_type="mysql"):
-        self.host = host
-        self.database = database
-        self.username = username
-        self.password = urllib.parse.unquote_plus(password)
-        self.db_type = db_type
-        self.conn = None
-
-        self.connect()
-
-    def connect(self):
-        try:
-            self.conn = pymysql.connect(
-                host=self.host,
-                user=self.username,
-                password=self.password,
-                database=self.database,
-                autocommit=True
-            )
-            print("✓ Database connection established")
-        except OperationalError as e:
-            raise ConnectionError(f"Database connection failed: {e}")
-
+    
+    def __init__(self, host, user, password, database):
+        self.config = {
+            'host': host,
+            'user': user,
+            'password': password,
+            'database': database
+        }
+    
+    def get_connection(self):
+        return mysql.connector.connect(**self.config)
+    
+    def insert_summary_result(self, category, media_type, overall_result, 
+                             failed_units, failed_media_names, failed_error_types,
+                             failed_conditions, common_failure_factor, year, quarter):
+        """Insert or update summary result in database."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        query = """
+        INSERT INTO summary (
+            category, media_type, overall_result,
+            failed_units, failed_media_names, failed_error_types, failed_conditions,
+            common_failure_factor, year, quarter, generated_at
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            overall_result = VALUES(overall_result),
+            failed_units = VALUES(failed_units),
+            failed_media_names = VALUES(failed_media_names),
+            failed_error_types = VALUES(failed_error_types),
+            failed_conditions = VALUES(failed_conditions),
+            common_failure_factor = VALUES(common_failure_factor),
+            generated_at = NOW()
+        """
+        
+        cursor.execute(query, (
+            category, media_type, overall_result,
+            failed_units, failed_media_names, failed_error_types, failed_conditions,
+            common_failure_factor, year, quarter
+        ))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+    
+    def get_quarter_trends(self):
+        """Get historical trends with detailed failure analysis."""
+        conn = self.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """
+        SELECT 
+            category, media_type, year, quarter,
+            overall_result, failed_units, failed_media_names,
+            failed_error_types, failed_conditions,
+            common_failure_factor, generated_at
+        FROM summary
+        ORDER BY category, media_type, year, quarter
+        """
+        
+        cursor.execute(query)
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        # Group by category and media_type
+        trends = {}
+        for row in results:
+            key = (row['category'], row['media_type'])
+            if key not in trends:
+                trends[key] = []
+            trends[key].append(row)
+        
+        # Analyze trends
+        trend_summaries = []
+        for (category, media_type), history in trends.items():
+            if len(history) < 2:
+                continue
+            
+            history.sort(key=lambda x: (x['year'], x['quarter']))
+            
+            earliest = history[0]
+            latest = history[-1]
+            trend_type = self._detect_trend(history)
+            
+            summary = {
+                'category': category,
+                'media_type': media_type,
+                'trend_type': trend_type,
+                'num_quarters': len(history),
+                'earliest': earliest,
+                'latest': latest,
+                'history': history
+            }
+            
+            trend_summaries.append(summary)
+        
+        return trend_summaries
+    
+    def _detect_trend(self, history):
+        """Detect trend pattern in historical data."""
+        results = [h['overall_result'] for h in history]
+        
+        earliest_result = results[0]
+        latest_result = results[-1]
+        
+        fail_count = sum(1 for r in results if r == 'Fail')
+        total = len(results)
+        
+        if earliest_result == 'Pass' and latest_result == 'Fail':
+            return 'DEGRADED'
+        elif earliest_result == 'Fail' and latest_result == 'Pass':
+            return 'IMPROVED'
+        elif fail_count == total and total >= 2:
+            return 'PERSISTENT_FAILURE'
+        elif fail_count > 0 and fail_count < total:
+            return 'UNSTABLE'
+        else:
+            return 'STABLE_PASS'
+    
     def create_tables(self):
         """
-        Creates the summary table if it does not exist.
+        Create database tables from scratch.
+        FIXED: Properly creates table with all required columns.
         """
-
-        self.ensure_connection()
-        with self.conn.cursor() as cursor:
-            create_sql = """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Drop table if you want fresh start (optional - comment out if not needed)
+            # cursor.execute("DROP TABLE IF EXISTS summary")
+            
+            # Create summary table with all enhanced columns
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS summary (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                category VARCHAR(100),
-                unit VARCHAR(50),
-                media_type VARCHAR(100),
-                overall_result VARCHAR(10),
-                common_failure_factor TEXT,
-                year INT,
-                quarter INT
-            );
-            """
-            cursor.execute(create_sql)
-            print("✓ Summary table ready")
-
-    def insert_test_result(self, category, unit, media_type, result, year, quarter):
-
-        self.ensure_connection()
-
-        query = """
-        INSERT INTO test_results
-        (category, unit, media_type, result, year, quarter)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """
-
-        with self.conn.cursor() as cursor:
-            cursor.execute(query, (
-                category,
-                unit,
-                media_type,
-                result,
-                year,
-                quarter
-            ))
-
-    def insert_summary(self, summary_data, year, quarter):
-        """
-        Inserts summary data into the database.
-        """
-        
-        self.ensure_connection()
-        if not summary_data or "categories" not in summary_data:
-            raise ValueError("Invalid summary_data format")
-
-        with self.conn.cursor() as cursor:
-            insert_sql = """
-            INSERT INTO summary
-            (category, media_type, overall_result, common_failure_factor, year, quarter)
-            VALUES (%s, %s, %s, %s, %s, %s);
-            """
-
-            for cat in summary_data["categories"]:
-                for media in cat.get("media_summary", []):
-                    category = cat.get("category", "Unknown")
-                    media_type = media.get("media_type", "Unknown")
-                    overall_result = media.get("overall_result", "NO DATA")
-                    common_factor = "\n".join(media.get("failed_combinations", []))
-
-                    cursor.execute(
-                        insert_sql,
-                        (category, media_type, overall_result, common_factor, year, quarter)
-                    )
-
-            print(f"✓ Inserted summary data for year={year}, quarter={quarter}")
-    
-    def get_all_quarters(self):
-        """Get list of all quarters in database"""
-        
-        self.ensure_connection()
-        query = """
-            SELECT DISTINCT year, quarter
-            FROM summary
-            ORDER BY year DESC, quarter DESC
-        """
-        
-        with self.conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(query)
-            return cursor.fetchall()
-    
-    def get_quarter_summary(self, year, quarter):
-        """Get summary for a specific quarter"""
-        
-        self.ensure_connection()
-        query = """
-            SELECT category, media_type, overall_result, common_failure_factor
-            FROM summary
-            WHERE year = %s AND quarter = %s
-            ORDER BY category, media_type
-        """
-        
-        with self.conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(query, (year, quarter))
-            return cursor.fetchall()
-
-    def get_quarter_trends(self):
-        """
-        Get trends comparing ALL quarters for each category/media combination.
-        Shows overall trend from earliest to latest.
-        """
-        
-        self.ensure_connection()
-
-        query = """
-            SELECT
-                year,
-                quarter,
-                category,
-                media_type,
-                overall_result
-            FROM summary
-            ORDER BY category, media_type, year, quarter
-        """
-
-        with self.conn.cursor(pymysql.cursors.DictCursor) as cursor:
-            cursor.execute(query)
-            rows = cursor.fetchall()
-
-        if not rows:
-            return []
-
-        trends = []
-        grouped = {}
-
-        # Group by (category, media_type)
-        for r in rows:
-            key = (r["category"], r["media_type"])
-            if key not in grouped:
-                grouped[key] = []
-            grouped[key].append((r["year"], r["quarter"], r["overall_result"]))
-
-        # Analyze trends for each category/media
-        for (category, media), values in grouped.items():
-            if len(values) < 2:
-                continue  # Need at least 2 quarters to compare
-
-            # Sort chronologically
-            values.sort(key=lambda x: (x[0], x[1]))
-
-            # Get earliest and latest
-            earliest = values[0]
-            latest = values[-1]
+                category VARCHAR(100) NOT NULL,
+                media_type VARCHAR(100) NOT NULL,
+                overall_result VARCHAR(10) NOT NULL,
+                failed_units TEXT DEFAULT NULL,
+                failed_media_names TEXT DEFAULT NULL,
+                failed_error_types TEXT DEFAULT NULL,
+                failed_conditions TEXT DEFAULT NULL,
+                common_failure_factor TEXT DEFAULT NULL,
+                year INT NOT NULL,
+                quarter INT NOT NULL,
+                generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_entry (category, media_type, year, quarter),
+                INDEX idx_year_quarter (year, quarter),
+                INDEX idx_category_media (category, media_type),
+                INDEX idx_result (overall_result)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
             
-            earliest_label = f"Q{earliest[1]} {earliest[0]}"
-            latest_label = f"Q{latest[1]} {latest[0]}"
-            earliest_result = earliest[2].lower()
-            latest_result = latest[2].lower()
-
-            # Count pass/fail across all quarters
-            pass_count = sum(1 for v in values if v[2].lower() == "pass")
-            fail_count = sum(1 for v in values if v[2].lower() == "fail")
-            total = len(values)
-
-            # Build trend description
-            trend_desc = None
-
-            # Case 1: Degraded (was pass, now fail)
-            if earliest_result == "pass" and latest_result == "fail":
-                trend_desc = f"⚠ DEGRADED: {earliest_label} PASS → {latest_label} FAIL"
-                if total > 2:
-                    trend_desc += f" (across {total} quarters)"
-
-            # Case 2: Improved (was fail, now pass)
-            elif earliest_result == "fail" and latest_result == "pass":
-                trend_desc = f"✓ IMPROVED: {earliest_label} FAIL → {latest_label} PASS"
-                if total > 2:
-                    trend_desc += f" (across {total} quarters)"
-
-            # Case 3: Persistent failure
-            elif fail_count == total:
-                trend_desc = f"⚠ PERSISTENT FAILURE: All {total} quarters FAIL ({earliest_label} to {latest_label})"
-
-            # Case 4: Consistent pass (good, no alert needed)
-            elif pass_count == total:
-                pass
-
-            # Case 5: Unstable (mixed results)
-            elif fail_count > 0 and pass_count > 0:
-                trend_desc = f"⚠ UNSTABLE: {fail_count}/{total} quarters failed between {earliest_label} and {latest_label}"
-
-            # Add to trends if noteworthy
-            if trend_desc:
-                trends.append({
-                    "category": category,
-                    "media_type": media,
-                    "trend_description": trend_desc,
-                    "quarters": total,
-                    "pass_count": pass_count,
-                    "fail_count": fail_count
-                })
-
-        return trends
-
-    def ensure_connection(self):
-        """
-        Reconnect if the database connection was closed.
-        """
+            conn.commit()
+            print("✓ Database table 'summary' created successfully")
+            
+            # Verify table structure
+            cursor.execute("DESCRIBE summary")
+            columns = cursor.fetchall()
+            print("\nTable structure:")
+            for col in columns:
+                print(f"  - {col[0]}: {col[1]}")
+            
+        except Exception as e:
+            print(f"❌ Error creating table: {e}")
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+            conn.close()
+    
+    def verify_connection(self):
+        """Test database connection."""
         try:
-            self.conn.ping(reconnect=True)
-        except:
-            self.connect()
-
-    def close(self):
-        if self.conn:
-            self.conn.close()
-            print("✓ Database connection closed")
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            print("✓ Database connection successful")
+            return True
+        except Exception as e:
+            print(f"❌ Database connection failed: {e}")
+            return False

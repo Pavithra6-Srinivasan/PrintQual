@@ -1,3 +1,9 @@
+"""
+storage_service.py - COMPLETE ENHANCED VERSION
+
+Includes enhanced failure details in summary and database.
+"""
+
 from core.excel_formatter import ExcelFormatter
 import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -6,18 +12,15 @@ class StorageService:
 
     def save_full_report(self, output_path, summary_data, all_pivots):
         """
-        Save formatted summary first,
-        followed by fully formatted pivot tables.
+        Save formatted summary with ENHANCED failure details.
         """
 
         with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
 
             formatter = ExcelFormatter()
 
-            # SUMMARY SHEET
-
+            # SUMMARY SHEET - ENHANCED
             summary_rows = []
-
             summary_rows.append(["SUMMARY"])
             summary_rows.append([])
             summary_rows.append([
@@ -29,19 +32,9 @@ class StorageService:
 
             for cat in summary_data["categories"]:
                 for media in cat["media_summary"]:
-
-                    failure_text = ""
-
-                    if media["overall_result"].upper() == "FAIL":
-
-                        failed_items = media.get("failed_combinations", [])
-
-                        factors = self.detect_common_factors_vertical(
-                            failed_items,
-                            media["media_type"]
-                        )
-
-                        failure_text = "\n".join(factors)
+                    
+                    # Build failure text from details
+                    failure_text = self._build_failure_text(media.get("failure_details", {}))
 
                     summary_rows.append([
                         cat["category"],
@@ -51,47 +44,33 @@ class StorageService:
                     ])
 
             summary_df = pd.DataFrame(summary_rows)
+            summary_df.to_excel(writer, sheet_name="Summary", index=False, header=False)
 
-            summary_df.to_excel(
-                writer,
-                sheet_name="Summary",
-                index=False,
-                header=False
-            )
-
-            # Apply formatting to Summary sheet
+            # Format Summary sheet
             summary_ws = writer.sheets["Summary"]
-
-            blue_fill = PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid")
+            blue_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
 
             for row_idx, row in enumerate(summary_ws.iter_rows(), start=1):
                 for cell in row:
-
-                    # Bold main title
                     if cell.value == "SUMMARY":
                         cell.font = Font(bold=True, size=14)
-
-                    # Header row formatting (row 3)
+                    
                     if row_idx == 3:
-                        cell.font = Font(bold=True)
+                        cell.font = Font(bold=True, size=11, color="FFFFFF")
                         cell.fill = blue_fill
-
-                    # PASS / FAIL coloring
+                    
                     if cell.value == "Fail":
                         cell.font = Font(bold=True, color="FF0000")
-
                     elif cell.value == "Pass":
                         cell.font = Font(bold=True, color="00B050")
-
-                    # Wrap text for vertical listing
+                    
                     cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-            # Auto column width
             for column_cells in summary_ws.columns:
                 length = max(len(str(cell.value)) if cell.value else 0 for cell in column_cells)
-                summary_ws.column_dimensions[column_cells[0].column_letter].width = length + 2
+                summary_ws.column_dimensions[column_cells[0].column_letter].width = min(length + 2, 50)
 
-            # Format for all tables
+            # PIVOT TABLES
             for category_name, pivot_data in all_pivots.items():
 
                 config = pivot_data["config"]
@@ -102,7 +81,6 @@ class StorageService:
                 pivot_data["media"].to_excel(writer, sheet_name=media_sheet, index=False)
                 pivot_data["unit"].to_excel(writer, sheet_name=unit_sheet, index=False)
 
-                # Apply your existing professional formatter
                 formatter.apply_standard_formatting(
                     worksheet=writer.sheets[media_sheet],
                     dataframe=pivot_data["media"],
@@ -120,82 +98,114 @@ class StorageService:
                     highlight_threshold=0.5,
                     total_column_name=config.total_column_name
                 )
-    def save_results_to_database(self, db, all_pivots, year, quarter):
-            """
-            Store pass/fail results per Unit and Media into database.
-            """
 
-            for category_name, pivot_data in all_pivots.items():
+    def _build_failure_text(self, failure_details):
+        """Build formatted failure text from failure details."""
+        if not failure_details:
+            return ""
+        
+        lines = []
+        
+        # Check if this is enhanced format (has failure_details dict)
+        if isinstance(failure_details, dict):
+            # Enhanced format
+            if failure_details.get("failed_media_names"):
+                media_list = ", ".join(failure_details["failed_media_names"])
+                lines.append(f"Media: {media_list}")
+            
+            if failure_details.get("failed_units"):
+                unit_list = ", ".join(failure_details["failed_units"])
+                lines.append(f"Units: {unit_list}")
+            
+            if failure_details.get("failed_error_types"):
+                error_list = ", ".join(failure_details["failed_error_types"])
+                lines.append(f"Errors: {error_list}")
+            
+            if failure_details.get("failed_conditions"):
+                if len(failure_details["failed_conditions"]) <= 2:
+                    cond_list = ", ".join(failure_details["failed_conditions"])
+                    lines.append(f"Conditions: {cond_list}")
+            
+            if not lines and failure_details.get("failed_combinations"):
+                for combo in failure_details["failed_combinations"][:2]:
+                    lines.append(combo)
+        
+        return "\n".join(lines) if lines else "Multiple factors"
 
-                unit_df = pivot_data["unit"]
-
-                for _, row in unit_df.iterrows():
-
-                    unit = row["Unit"]
-
-                    for column in unit_df.columns:
-
-                        if column in ["Unit", "Grand Total"]:
-                            continue
-
-                        value = row[column]
-
-                        if pd.isna(value):
-                            continue
-
-                        # Fail if defect count > 0
-                        result = "Fail" if value > 0 else "Pass"
-
-                        db.insert_test_result(
-                            category=category_name,
-                            unit=unit,
-                            media_type=column,
-                            result=result,
-                            year=year,
-                            quarter=quarter
-                        )
+    def save_results_to_database(self, db, all_pivots, year, quarter, summary_data):
+        """
+        Save ENHANCED results to database.
+        
+        Args:
+            db: DatabaseManager instance
+            all_pivots: Dictionary of pivot data
+            year: Year (int)
+            quarter: Quarter (1-4)
+            summary_data: Summary data with failure_details
+        """
+        
+        for cat in summary_data["categories"]:
+            category_name = cat["category"]
+            
+            for media in cat["media_summary"]:
+                media_type = media["media_type"]
+                overall_result = media["overall_result"]
+                
+                # Get failure details (enhanced format)
+                details = media.get("failure_details", {})
+                
+                # Build strings for database
+                failed_units_str = ",".join(details.get("failed_units", []))
+                failed_media_names = ",".join(details.get("failed_media_names", []))
+                failed_error_types = ",".join(details.get("failed_error_types", []))
+                failed_conditions = ",".join(details.get("failed_conditions", []))
+                
+                # Build display text
+                common_failure_factor = self._build_failure_text(details)
+                
+                # Insert into database
+                db.insert_summary_result(
+                    category=category_name,
+                    media_type=media_type,
+                    overall_result=overall_result,
+                    failed_units=failed_units_str,
+                    failed_media_names=failed_media_names,
+                    failed_error_types=failed_error_types,
+                    failed_conditions=failed_conditions,
+                    common_failure_factor=common_failure_factor,
+                    year=year,
+                    quarter=quarter
+                )
                         
     def detect_common_factors_vertical(self, failed_list, media_type):
-        """
-        Returns dominant failure factors vertically.
-        """
-
+        """Legacy method - kept for backward compatibility."""
         if not failed_list:
             return []
 
         factor_counts = {}
-
         for item in failed_list:
             parts = [p.strip() for p in item.split("|")]
-
             for part in parts:
-                if part:  # avoid empty strings
+                if part:
                     factor_counts[part] = factor_counts.get(part, 0) + 1
 
         if not factor_counts:
             return []
 
-        # Sort by frequency
         sorted_factors = sorted(
             factor_counts.items(),
             key=lambda x: x[1],
             reverse=True
         )
 
-        # Only keep strong drivers (at least 60% dominance)
         threshold = max(1, int(len(failed_list) * 0.6))
-
+        
         dominant = [
             factor for factor, count in sorted_factors
             if count >= threshold
         ]
 
-        # If nothing passes threshold → just return top 1
         if not dominant:
             dominant = [sorted_factors[0][0]]
-
-        # Add media driver ONLY if all fails are same media
-        if len(failed_list) > 0:
-            dominant.insert(0, f"Media: {media_type}")
 
         return dominant

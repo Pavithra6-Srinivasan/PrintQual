@@ -1,31 +1,56 @@
 """
-clear_db.py - Clear all data from summary table
+reset_database.py - Drop and recreate the summary table
 """
 
-import urllib.parse
 from engine.database_manager import DatabaseManager
 
-# Connect to database
-db = DatabaseManager(
-    host="15.46.29.115",
-    database="quality_sandbox",
-    username="pavithra_030226",
-    password=urllib.parse.quote_plus("pavithra@030226"),
-    db_type="mysql"
-)
-
-try:
-    # Clear all data
-    with db.conn.cursor() as cursor:
-        cursor.execute("DELETE FROM summary")
-        rows_deleted = cursor.rowcount
-        print(f"✓ Deleted {rows_deleted} rows from summary table")
+def main():
+    print("Resetting database (DROP + CREATE)...")
+    print("-" * 50)
     
-    # Verify
-    with db.conn.cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) FROM summary")
-        count = cursor.fetchone()[0]
-        print(f"✓ Table now has {count} rows")
+    # Connect to database
+    db = DatabaseManager(
+        host="15.46.29.115",
+        user="pavithra_030226",
+        password="pavithra@030226",
+        database="quality_sandbox"
+    )
+    
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # Ask for confirmation
+        response = input("\n⚠ WARNING: This will DELETE the entire summary table and recreate it.\nAre you sure? (yes/no): ")
+        
+        if response.lower() != 'yes':
+            print("Operation cancelled.")
+            cursor.close()
+            conn.close()
+            return
+        
+        # Drop table
+        print("\n1. Dropping existing table...")
+        cursor.execute("DROP TABLE IF EXISTS summary")
+        conn.commit()
+        print("✓ Table dropped")
+        
+        # Close this connection
+        cursor.close()
+        conn.close()
+        
+        # Recreate table using create_tables method
+        print("\n2. Creating fresh table...")
+        db.create_tables()
+        
+        print("\n" + "=" * 50)
+        print("✓ Database reset complete!")
+        print("=" * 50)
+        
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
-finally:
-    db.close()
+if __name__ == "__main__":
+    main()

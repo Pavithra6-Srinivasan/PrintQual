@@ -164,8 +164,8 @@ class PivotGeneratorApp:
                 response = self.ai_service.answer_question(question)
             
             # Display response
-            self.root.after(0, lambda: self.display_ai_response(response))            
-            self.root.after(0, lambda: self.update_status("Ready", "green"))
+            self.root.after(0, lambda msg=error_msg: self.display_ai_error(msg))
+            self.root.after(0, lambda: self.update_status("AI Error", "red"))
             
         except Exception as e:
             error_msg = str(e)
@@ -233,21 +233,14 @@ class PivotGeneratorApp:
             self.update_status("Complete! ✓", "green")
 
         except Exception as e:
-
             import traceback
-
-            self.log(traceback.format_exc())
-
+            error_trace = traceback.format_exc()
+            error_msg = str(e)
+            
+            self.log(error_trace)
             self.update_status("Error! ✗", "red")
-
-            self.root.after(
-                0,
-                lambda: messagebox.showerror("Error", str(e))
-            )
-
-        finally:
-            self.root.after(0, lambda: self.generate_btn.config(state='normal'))
-            self.root.after(0, lambda: self.progress.stop())
+            
+            self.root.after(0, lambda msg=error_msg: messagebox.showerror("Error", msg))
 
 def main():
     """Main entry point."""
