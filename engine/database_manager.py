@@ -16,7 +16,7 @@ class DatabaseManager:
     
     def insert_summary_result(self, category, media_type, overall_result, 
                              failed_units, failed_media_names, failed_error_types,
-                             failed_conditions, common_failure_factor, year, quarter):
+                             failed_conditions, remarks, year, quarter):
         """Insert or update summary result in database."""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -25,7 +25,7 @@ class DatabaseManager:
         INSERT INTO summary (
             category, media_type, overall_result,
             failed_units, failed_media_names, failed_error_types, failed_conditions,
-            common_failure_factor, year, quarter, generated_at
+            remarks, year, quarter, generated_at
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
         )
@@ -35,14 +35,14 @@ class DatabaseManager:
             failed_media_names = VALUES(failed_media_names),
             failed_error_types = VALUES(failed_error_types),
             failed_conditions = VALUES(failed_conditions),
-            common_failure_factor = VALUES(common_failure_factor),
+            remarks = VALUES(remarks),
             generated_at = NOW()
         """
         
         cursor.execute(query, (
             category, media_type, overall_result,
             failed_units, failed_media_names, failed_error_types, failed_conditions,
-            common_failure_factor, year, quarter
+            remarks, year, quarter
         ))
         
         conn.commit()
@@ -59,7 +59,7 @@ class DatabaseManager:
             category, media_type, year, quarter,
             overall_result, failed_units, failed_media_names,
             failed_error_types, failed_conditions,
-            common_failure_factor, generated_at
+            remarks, generated_at
         FROM summary
         ORDER BY category, media_type, year, quarter
         """
@@ -147,7 +147,7 @@ class DatabaseManager:
                 failed_media_names TEXT DEFAULT NULL,
                 failed_error_types TEXT DEFAULT NULL,
                 failed_conditions TEXT DEFAULT NULL,
-                common_failure_factor TEXT DEFAULT NULL,
+                remarks TEXT DEFAULT NULL,
                 year INT NOT NULL,
                 quarter INT NOT NULL,
                 generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,

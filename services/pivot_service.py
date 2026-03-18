@@ -1,3 +1,10 @@
+"""
+pivot_service.py - COMBINED TABLES
+
+Creates single combined table per category (Media Name + Unit)
+Grand Total after each media name group
+"""
+
 from core.pivot_generator import UnifiedPivotGenerator
 from core.Spec_Category_config import Paperpath_CATEGORIES
 
@@ -16,6 +23,10 @@ class PivotService:
         return temp_gen.sub_assembly, temp_gen.detected_main_printer, temp_gen.detected_variant, temp_gen.spec_sheet
 
     def generate_all_pivots(self, categories):
+        """
+        Generate COMBINED pivot tables (Media Name + Unit in one table).
+        Grand Total rows after each Media Name group.
+        """
         all_pivots = {}
 
         for config in categories:
@@ -25,9 +36,11 @@ class PivotService:
                 self.spec_file
             )
 
+            # Use COMBINED table only (no separate media/unit tables)
+            combined_pivot = generator.create_combined_pivot()
+
             all_pivots[config.name] = {
-                "media": generator.create_pivot_by_media_name(),
-                "unit": generator.create_pivot_by_unit(),
+                "combined": combined_pivot,
                 "config": config
             }
 

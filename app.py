@@ -34,7 +34,7 @@ class PivotGeneratorApp:
         self.ai_thinking = False
         
         # Welcome message
-        self.log_styled("Welcome! Load a raw data file and click 'Generate Report' to begin.", "system")
+        self.log_styled("Welcome!", "system")
 
     def browse_raw_data(self):
         """Browse for raw data file."""

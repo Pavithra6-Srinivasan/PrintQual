@@ -7,5 +7,4 @@ class SummaryService:
 
     def generate(self):
         summary_data = self.engine.generate_summary()
-        summary_text = self.engine.format_summary_text(summary_data)
-        return summary_data, summary_text
+        return summary_data, ""

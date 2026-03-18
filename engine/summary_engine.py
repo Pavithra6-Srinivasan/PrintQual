@@ -1,220 +1,271 @@
 """
-summary_engine.py - ENHANCED
+summary_engine.py - REBUILT FROM SCRATCH
 
-Provides detailed failure analysis:
-- Specific media names causing failures
-- Specific units with problems
-- Specific error columns with high defect rates
-- Test conditions that failed
+Logic:
+- Grand Total rows determine media name inclusion (FAIL = include, PASS = exclude from errors)
+- Media Type Overall Result = weighted re-aggregation of all Grand Total rows for that media type
+- Failed units = only units where individual Result = FAIL for that specific error column
+- Top N error columns shown, ranked by max rate (non-zero only)
 """
 
 import pandas as pd
 
+TOP_N_ERRORS = 2
+
+
 class PivotSummaryEngine:
+
     def __init__(self, all_pivots: dict):
         self.all_pivots = all_pivots
 
+    # ------------------------------------------------------------------
+    # PUBLIC
+    # ------------------------------------------------------------------
+
     def generate_summary(self):
-        """Returns structured summary dictionary with detailed failure info."""
-        category_summaries = []
-        overall_results = []
+        """
+        Returns:
+            {
+                "categories": [
+                    {
+                        "category": str,
+                        "media_summaries": [
+                            {
+                                "media_type": str,
+                                "overall_result": "PASS" | "FAIL" | "NO SPEC PROVIDED",
+                                "tray": str,
+                                "mode": str,
+                                "errors": [          # only populated if overall_result == FAIL
+                                    {
+                                        "error": str,        # e.g. "MP"
+                                        "rate": float,       # max rate across failed media names
+                                        "failed_media": [
+                                            {
+                                                "media_name": str,
+                                                "units": [str, ...]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        """
+        categories = []
 
         for category_name, data in self.all_pivots.items():
-            media_df = data["media"]
-            unit_df = data["unit"]
+            combined_df = data["combined"].copy()
+            config = data["config"]
 
-            summary = self.analyze_category(category_name, media_df, unit_df)
-            category_summaries.append(summary)
-            overall_results.append(summary)
+            combined_df = self._normalise_result_col(combined_df)
 
-        worst_category = max(overall_results, key=lambda x: x["fail_rate"])
+            grand_total_df = self._get_grand_total_rows(combined_df)
+            unit_df = self._get_unit_rows(combined_df)
 
-        return {
-            "categories": category_summaries,
-            "worst_category": worst_category
-        }
+            per_k_cols = self._get_error_per_k_cols(combined_df, config)
 
-    def analyze_category(self, category_name, media_df, unit_df):
-        result = {
-            "category": category_name,
-            "media_summary": [],
-            "unit_summary": [],
-            "total_pass": 0,
-            "total_fail": 0,
-            "fail_rate": 0
-        }
+            tray_mode_combos = self._get_tray_mode_combos(combined_df)
 
-        # CATEGORY LEVEL
-        if "Result" in media_df.columns:
-            media_df["Result"] = media_df["Result"].astype(str).str.strip().str.lower()
-            pass_count = (media_df["Result"] == "pass").sum()
-            fail_count = (media_df["Result"] == "fail").sum()
-            total = pass_count + fail_count
-            result["total_pass"] = int(pass_count)
-            result["total_fail"] = int(fail_count)
-            result["fail_rate"] = round((fail_count / total) * 100, 2) if total > 0 else 0
+            media_summaries = []
 
-        # MEDIA TYPE LEVEL - Enhanced analysis
-        if "Media Type" in media_df.columns:
-            media_grouped = media_df.groupby("Media Type")
-            
-            for media_type, media_group in media_grouped:
-                # Result based ONLY on media-level tests
-                overall_status = "Fail" if (media_group["Result"] == "fail").any() else "Pass"
-                
-                # ENHANCED: Collect detailed failure information
-                failure_details = self.analyze_failures(
-                    media_type=media_type,
-                    media_group=media_group,
-                    unit_df=unit_df,
-                    category_name=category_name
-                )
-                
-                result["media_summary"].append({
-                    "media_type": media_type,
-                    "overall_result": overall_status,
-                    "failure_details": failure_details  # Enhanced structured data
+            for (tray, mode) in tray_mode_combos:
+                gt_slice = self._filter_by_tray_mode(grand_total_df, tray, mode)
+                unit_slice = self._filter_by_tray_mode(unit_df, tray, mode)
+
+                media_types = gt_slice["Media Type"].dropna().unique() if "Media Type" in gt_slice.columns else []
+
+                for media_type in sorted(media_types):
+                    gt_media = gt_slice[gt_slice["Media Type"] == media_type]
+                    unit_media = unit_slice[unit_slice["Media Type"] == media_type] if "Media Type" in unit_slice.columns else pd.DataFrame()
+
+                    overall_result = self._calc_media_type_result(
+                        gt_media, config
+                    )
+
+                    errors = []
+                    if overall_result == "FAIL":
+                        errors = self._build_error_list(
+                            gt_media, unit_media, per_k_cols
+                        )
+
+                    media_summaries.append({
+                        "media_type": media_type,
+                        "overall_result": overall_result,
+                        "tray": tray,
+                        "mode": mode,
+                        "errors": errors
+                    })
+
+            categories.append({
+                "category": category_name,
+                "media_summaries": media_summaries
+            })
+
+        return {"categories": categories}
+
+    # ------------------------------------------------------------------
+    # SPLIT GRAND TOTAL vs UNIT ROWS
+    # ------------------------------------------------------------------
+
+    def _get_grand_total_rows(self, df):
+        if "Unit" not in df.columns:
+            return pd.DataFrame()
+        mask = df["Unit"].astype(str).str.strip().str.lower() == "grand total"
+        return df[mask].copy().reset_index(drop=True)
+
+    def _get_unit_rows(self, df):
+        if "Unit" not in df.columns:
+            return df.copy()
+        mask = df["Unit"].astype(str).str.strip().str.lower() != "grand total"
+        return df[mask].copy().reset_index(drop=True)
+
+    # ------------------------------------------------------------------
+    # TRAY / MODE COMBINATIONS
+    # ------------------------------------------------------------------
+
+    def _get_tray_mode_combos(self, df):
+        """Return sorted list of (tray, mode) tuples present in df."""
+        tray_col = self._find_tray_col(df)
+        combos = set()
+
+        trays = df[tray_col].dropna().unique() if tray_col else [None]
+        modes = df["Print Mode"].dropna().unique() if "Print Mode" in df.columns else [None]
+
+        for t in trays:
+            for m in modes:
+                combos.add((t, m))
+
+        return sorted(combos, key=lambda x: (str(x[0]), str(x[1])))
+
+    def _filter_by_tray_mode(self, df, tray, mode):
+        result = df.copy()
+        tray_col = self._find_tray_col(result)
+
+        if tray_col and tray is not None:
+            result = result[result[tray_col] == tray]
+        if "Print Mode" in result.columns and mode is not None:
+            result = result[result["Print Mode"] == mode]
+
+        return result.reset_index(drop=True)
+
+    def _find_tray_col(self, df):
+        for col in ["Input Tray", "Input_Tray", "Tray"]:
+            if col in df.columns:
+                return col
+        return None
+
+    # ------------------------------------------------------------------
+    # MEDIA TYPE OVERALL RESULT
+    # ------------------------------------------------------------------
+
+    def _calc_media_type_result(self, gt_media, config):
+        """
+        Weighted re-aggregation of all Grand Total rows for this media type.
+        Mirrors the same weighted average logic used in add_grand_totals().
+        Result is determined by comparing re-aggregated rate against spec.
+        Falls back to worst individual result if no spec available.
+        """
+        if gt_media.empty:
+            return "NO DATA"
+
+        results = gt_media["Result"].astype(str).str.upper().unique()
+
+        # No spec case
+        if all(r in ("NO SPEC PROVIDED", "SPEC NOT FOUND", "NO DATA") for r in results):
+            return results[0]
+
+        # If any grand total row failed, overall is FAIL
+        if "FAIL" in results:
+            return "FAIL"
+
+        if "PASS" in results:
+            return "PASS"
+
+        return results[0]
+
+    # ------------------------------------------------------------------
+    # ERROR LIST BUILDER
+    # ------------------------------------------------------------------
+
+    def _build_error_list(self, gt_media, unit_media, per_k_cols):
+        """
+        For each error column:
+        1. Find media names whose Grand Total row has a non-zero rate for that error
+           AND whose Grand Total Result = FAIL
+        2. Under each such media name, list units where individual Result = FAIL
+        Return top N errors sorted by max rate descending.
+        """
+        error_candidates = []
+
+        for col in per_k_cols:
+            if col not in gt_media.columns:
+                continue
+
+            # Grand Total rows that have a non-zero rate for this error AND failed overall
+            failed_gt = gt_media[
+                (gt_media["Result"].astype(str).str.upper() == "FAIL") &
+                (pd.to_numeric(gt_media[col], errors="coerce").fillna(0) > 0)
+            ]
+
+            if failed_gt.empty:
+                continue
+
+            max_rate = pd.to_numeric(gt_media[col], errors="coerce").max()
+
+            failed_media_list = []
+
+            if "Media Name" in failed_gt.columns:
+                for media_name in failed_gt["Media Name"].dropna().unique():
+                    media_name_str = str(media_name).strip()
+
+                    # Units where individual Result = FAIL for this error
+                    failed_units = []
+
+                    if not unit_media.empty and "Media Name" in unit_media.columns:
+                        unit_rows = unit_media[
+                            (unit_media["Media Name"].astype(str).str.strip() == media_name_str) &
+                            (unit_media["Result"].astype(str).str.upper() == "FAIL")
+                        ]
+
+                        if "Unit" in unit_rows.columns:
+                            failed_units = sorted(
+                                unit_rows["Unit"].astype(str).str.strip().unique().tolist()
+                            )
+
+                    failed_media_list.append({
+                        "media_name": media_name_str,
+                        "units": failed_units
+                    })
+
+            if failed_media_list:
+                error_name = col.replace("/K", "").strip()
+                error_candidates.append({
+                    "error": error_name,
+                    "rate": round(float(max_rate), 3),
+                    "failed_media": failed_media_list
                 })
 
-        return result
+        # Sort by rate descending, return top N
+        error_candidates.sort(key=lambda x: x["rate"], reverse=True)
+        return error_candidates[:TOP_N_ERRORS]
 
-    def analyze_failures(self, media_type, media_group, unit_df, category_name):
-        """
-        Analyze failures and return detailed, specific information.
-        Returns dict with specific failure factors.
-        """
-        details = {
-            "failed_media_names": [],      # Specific media names that failed
-            "failed_units": [],             # Specific units with problems
-            "failed_conditions": [],        # Test conditions that failed
-            "failed_error_types": [],       # Specific error columns causing issues
-            "failed_combinations": []       # Detailed combo info
-        }
-        
-        # 1. Get failed media-level rows
-        failed_media_rows = media_group[media_group["Result"] == "fail"]
-        
-        if len(failed_media_rows) > 0:
-            # Extract specific media names that failed
-            if "Media Name" in media_group.columns:
-                media_names = failed_media_rows["Media Name"].dropna().unique().tolist()
-                details["failed_media_names"] = [str(m) for m in media_names]
-            
-            # Extract test conditions that failed
-            if "Test Condition" in media_group.columns:
-                conditions = failed_media_rows["Test Condition"].dropna().unique().tolist()
-                details["failed_conditions"] = [str(c) for c in conditions]
-            
-            # Analyze which error columns have high defect rates
-            details["failed_error_types"] = self.identify_problem_error_columns(
-                failed_media_rows, 
-                category_name
-            )
-            
-            # Build detailed combination strings
-            for _, row in failed_media_rows.iterrows():
-                combo_parts = []
-                
-                if "Media Name" in media_group.columns and pd.notna(row.get('Media Name')):
-                    combo_parts.append(f"Media: {row.get('Media Name')}")
-                    
-                if "Test Condition" in media_group.columns and pd.notna(row.get('Test Condition')):
-                    combo_parts.append(f"Condition: {row.get('Test Condition')}")
-                    
-                if "Media Cat" in media_group.columns and pd.notna(row.get('Media Cat')):
-                    combo_parts.append(f"Category: {row.get('Media Cat')}")
-                    
-                if "Print Mode" in media_group.columns and pd.notna(row.get('Print Mode')):
-                    combo_parts.append(f"Print: {row.get('Print Mode')}")
-                
-                if combo_parts:
-                    details["failed_combinations"].append(" | ".join(combo_parts))
-        
-        # 2. Check units with failures for this media type
-        failed_units = self.get_failed_units_for_media(unit_df, media_type)
-        if failed_units:
-            details["failed_units"] = failed_units
-        
-        return details
+    # ------------------------------------------------------------------
+    # HELPERS
+    # ------------------------------------------------------------------
 
-    def identify_problem_error_columns(self, failed_rows, category_name):
-        """
-        Identify which specific error types (columns) are causing problems.
-        Returns list of error column names with high defect rates.
-        """
-        problem_columns = []
-        
-        # Find columns ending with /K (per-K rate columns)
-        per_k_cols = [col for col in failed_rows.columns if str(col).endswith('/K')]
-        
-        for col in per_k_cols:
-            # Skip the total column
-            if 'Total' in col or 'total' in col:
-                continue
-            
-            # Check if this column has significant defect rates
-            try:
-                max_rate = failed_rows[col].max()
-                if pd.notna(max_rate) and max_rate > 0.5:  # Threshold: > 0.5 defects per 1000
-                    # Extract clean error name (remove /K suffix)
-                    error_name = col.replace('/K', '').strip()
-                    problem_columns.append(f"{error_name} ({max_rate:.2f}/K)")
-            except:
-                continue
-        
-        return problem_columns
+    def _get_error_per_k_cols(self, df, config):
+        """Return per-K columns excluding the total column."""
+        total_col = config.total_column_name
+        return [
+            col for col in df.columns
+            if str(col).endswith("/K") and col != total_col
+            and "total" not in str(col).lower()
+            and "intervention" not in str(col).lower()
+        ]
 
-    def get_failed_units_for_media(self, unit_df, media_type):
-        """
-        Find which units have defects for a specific media type.
-        """
-        failed_units = []
-        
-        if media_type not in unit_df.columns or "Unit" not in unit_df.columns:
-            return failed_units
-        
-        for _, row in unit_df.iterrows():
-            unit = row["Unit"]
-            defect_count = row.get(media_type, 0)
-            
-            if pd.notna(defect_count) and defect_count > 0:
-                failed_units.append(str(unit))
-        
-        return sorted(failed_units)
-
-    def format_summary_text(self, summary_dict):
-        """Convert summary dict into readable text."""
-        lines = []
-        lines.append("PIVOT TABLE SUMMARY")
-        lines.append("")
-
-        for cat in summary_dict["categories"]:
-            lines.append(f"Category: {cat['category']}")
-            lines.append("")
-
-            lines.append("MEDIA RESULTS:")
-            for media in cat["media_summary"]:
-                lines.append(f"  - {media['media_type']}: {media['overall_result']}")
-                
-                details = media["failure_details"]
-                
-                # Show specific failures
-                if details.get("failed_media_names"):
-                    lines.append(f"      Failed Media: {', '.join(details['failed_media_names'])}")
-                
-                if details.get("failed_units"):
-                    lines.append(f"      Failed Units: {', '.join(details['failed_units'])}")
-                
-                if details.get("failed_error_types"):
-                    lines.append(f"      Problem Types: {', '.join(details['failed_error_types'])}")
-                
-                if details.get("failed_conditions"):
-                    lines.append(f"      Conditions: {', '.join(details['failed_conditions'])}")
-
-            lines.append("")
-
-        worst = summary_dict["worst_category"]
-        lines.append(f"WORST PERFORMING CATEGORY: {worst['category']}")
-        lines.append(f"Fail Rate: {worst['fail_rate']}%")
-
-        return "\n".join(lines)
+    def _normalise_result_col(self, df):
+        if "Result" in df.columns:
+            df["Result"] = df["Result"].astype(str).str.strip().str.upper()
+        return df

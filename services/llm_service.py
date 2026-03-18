@@ -6,7 +6,7 @@ class LLMService:
         self.model = "qwen2.5"
         self.chat_history = []
 
-    def ask(self, system_prompt, user_message, timeout=120):
+    def ask(self, system_prompt, user_message, timeout=200):
 
         self.chat_history = self.chat_history[-5:]
         self.chat_history.append({"role": "user", "content": user_message})
