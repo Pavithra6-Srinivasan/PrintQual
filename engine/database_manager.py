@@ -105,17 +105,17 @@ class DatabaseManager:
     
     def _detect_trend(self, history):
         """Detect trend pattern in historical data."""
-        results = [h['overall_result'] for h in history]
+        results = [str(h['overall_result']).strip().upper() for h in history]
         
         earliest_result = results[0]
         latest_result = results[-1]
         
-        fail_count = sum(1 for r in results if r == 'Fail')
+        fail_count = sum(1 for r in results if r == 'FAIL')
         total = len(results)
         
-        if earliest_result == 'Pass' and latest_result == 'Fail':
+        if earliest_result == 'PASS' and latest_result == 'FAIL':
             return 'DEGRADED'
-        elif earliest_result == 'Fail' and latest_result == 'Pass':
+        elif earliest_result == 'FAIL' and latest_result == 'PASS':
             return 'IMPROVED'
         elif fail_count == total and total >= 2:
             return 'PERSISTENT_FAILURE'
@@ -142,7 +142,7 @@ class DatabaseManager:
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 category VARCHAR(100) NOT NULL,
                 media_type VARCHAR(100) NOT NULL,
-                overall_result VARCHAR(10) NOT NULL,
+                overall_result VARCHAR(50) NOT NULL,
                 failed_units TEXT DEFAULT NULL,
                 failed_media_names TEXT DEFAULT NULL,
                 failed_error_types TEXT DEFAULT NULL,

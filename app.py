@@ -209,38 +209,40 @@ class PivotGeneratorApp:
         """Background worker for report generation."""
         try:
             self.update_status("Generating...", "blue")
-
-            raw_file = self.raw_data_file.get()
+ 
+            raw_file  = self.raw_data_file.get()
             spec_file = str(self.spec_file_path) if self.spec_file_path.exists() else None
-
+ 
             pipeline = ReportPipeline()
-
-            result = pipeline.run(
+            result   = pipeline.run(
                 raw_file=raw_file,
                 spec_file=spec_file,
                 output_folder=self.output_folder.get()
             )
-
+ 
             self.latest_summary_text = result["summary_text"]
-
+ 
             self.log(f"✓ Printer: {result['printer']} {result['variant']}")
             self.log(f"✓ Sub-Assembly: {result['sub_assembly']}")
             self.log(f"✓ Quarter: Q{result['quarter']} FY{result['year']}")
-            self.log(f"✓ Report saved: {Path(result['output_path']).name}")
-
+            self.log(f"✓ Excel saved: {Path(result['output_path']).name}")
+ 
+            if result.get("pptx_path"):
+                self.log(f"✓ PowerPoint saved: {Path(result['pptx_path']).name}")
+            else:
+                self.log_styled("⚠ PowerPoint generation failed — check console", "error")
+ 
             self.update_status("Complete! ✓", "green")
-
+ 
         except Exception as e:
             import traceback
             error_trace = traceback.format_exc()
-            error_msg = str(e)
-            
+            error_msg   = str(e)
             self.log_styled(error_msg, "error")
-            print(error_trace)  # Print to console
+            print(error_trace)
             self.update_status("Error! ✗", "red")
-            
             self.root.after(0, lambda msg=error_msg: messagebox.showerror("Error", msg))
-
+ 
         finally:
             self.root.after(0, lambda: self.generate_btn.config(state='normal'))
             self.root.after(0, lambda: self.progress.stop())

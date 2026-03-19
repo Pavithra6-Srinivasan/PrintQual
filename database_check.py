@@ -1,5 +1,5 @@
 """
-check_database.py - Check what's in the database
+Check what's in the database
 """
 
 from engine.database_manager import DatabaseManager
