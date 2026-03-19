@@ -7,7 +7,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from pathlib import Path
 from datetime import datetime
-import time
 import threading
 
 from ui_builder import create_widgets

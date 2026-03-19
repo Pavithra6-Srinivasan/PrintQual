@@ -1,25 +1,5 @@
 """
 pptx_service.py - Summary PowerPoint Generator
-
-Layout:
-  Slide 1 : Title slide
-  Slide N+: Content slides
-
-  Each content slide can contain multiple (heading + table) blocks stacked
-  vertically. Each block corresponds to one (Input Tray + Test Category)
-  combination.
-
-  Heading: bold text box — "Input Tray: X  |  Category: Y"
-  Table columns: Print Mode | Media Type | Overall Result |
-                 Error Type & Rate | Failed Media Name | Failed Units
-
-  Pagination:
-  - Fit as many blocks as possible per slide
-  - If a block (heading + table) does not fit, move entire block to next slide
-  - If a single table is too tall on its own, split it across slides
-    with heading repeated as "(cont.)"
-
-Font: 11pt throughout table
 """
 
 import copy
@@ -89,8 +69,6 @@ def generate_summary_pptx(output_path, summary_data, printer, variant,
     prs = Presentation()
     prs.slide_width  = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
-
-    _add_title_slide(prs, printer, variant, sub_assembly, year, quarter)
 
     # Build all blocks: each block = (heading_str, flat_rows)
     # grouped by (tray, category)
