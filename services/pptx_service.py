@@ -1,24 +1,38 @@
 """
 pptx_service.py - Summary PowerPoint Generator
 
-Key fixes:
-  1. Height-aware pagination: estimates each row's actual height based on
-     text wrap, cuts to next slide before overflow occurs.
-  2. Table formatting matches target: uniform black borders on every cell,
-     consistent row heights, blue header, white body, PASS/FAIL colour only
-     in Overall Result column.
+Layout:
+  Slide 1 : Title slide
+  Slide N+: Content slides
+
+  Each content slide can contain multiple (heading + table) blocks stacked
+  vertically. Each block corresponds to one (Input Tray + Test Category)
+  combination.
+
+  Heading: bold text box — "Input Tray: X  |  Category: Y"
+  Table columns: Print Mode | Media Type | Overall Result |
+                 Error Type & Rate | Failed Media Name | Failed Units
+
+  Pagination:
+  - Fit as many blocks as possible per slide
+  - If a block (heading + table) does not fit, move entire block to next slide
+  - If a single table is too tall on its own, split it across slides
+    with heading repeated as "(cont.)"
+
+Font: 11pt throughout table
 """
 
+import copy
+import math
 from datetime import datetime
+
+from lxml import etree
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
-from lxml import etree
-import math
+from pptx.util import Inches, Pt
 
-
-# ── Palette ───────────────────────────────────────────────────────────────────
+# ── Colours ───────────────────────────────────────────────────────────────────
 COL_WHITE   = RGBColor(0xFF, 0xFF, 0xFF)
 COL_BLACK   = RGBColor(0x00, 0x00, 0x00)
 COL_BLUE    = RGBColor(0x44, 0x72, 0xC4)
@@ -28,42 +42,47 @@ COL_FAIL_BG = RGBColor(0xFF, 0xC7, 0xCE)
 COL_FAIL_FG = RGBColor(0xC0, 0x00, 0x00)
 COL_NAVY    = RGBColor(0x1E, 0x27, 0x61)
 
-# ── Slide layout (4:3 standard, inches) ───────────────────────────────────────
-SLIDE_W = 10.0
-SLIDE_H = 7.5
+# ── Slide geometry (4:3, inches) ──────────────────────────────────────────────
+SLIDE_W       = 10.0
+SLIDE_H       = 7.5
+MARGIN        = 0.25
+TABLE_X       = MARGIN
+TABLE_W       = SLIDE_W - 2 * MARGIN   # 9.5"
+SLIDE_TOP     = 0.20                    # where content starts
+SLIDE_BOTTOM  = 7.40                    # furthest content can reach
+AVAIL_H       = SLIDE_BOTTOM - SLIDE_TOP  # 7.20" total per slide
 
-MARGIN  = 0.25
-TABLE_X = MARGIN
-TABLE_W = SLIDE_W - 2 * MARGIN   # 9.5"
-TABLE_Y = 0.80                    # top of table on slide
-TABLE_MAX_BOTTOM = 7.35           # furthest the table bottom can reach
+# Column widths — must sum to TABLE_W = 9.5"
+# PrintMode | MediaType | Result | Error | MediaName | Units
+COL_W   = [1.20, 1.15, 1.10, 1.70, 2.85, 1.50]
+HEADERS = ["Print Mode", "Media Type", "Overall Result",
+           "Error Type & Rate", "Failed Media Name", "Failed Units"]
+N_COLS  = len(HEADERS)
 
-TABLE_AVAIL_H = TABLE_MAX_BOTTOM - TABLE_Y   # 6.55"
-
-# Column widths (inches) — must sum to TABLE_W = 9.5
-COL_WIDTHS = [1.30, 1.15, 1.10, 1.70, 2.75, 1.50]
-HEADERS    = ["Category", "Media Type", "Overall Result",
-              "Error Type & Rate", "Failed Media Name", "Failed Units"]
-
-# Approximate characters per line for each column at pt12 Calibri
-# Used for wrap estimation. Calibri 12pt ≈ 0.085" per char.
-CHAR_WIDTH_INCHES = 0.085
-CELL_PAD_H = 0.06   # top + bottom padding in inches per cell (Pt3 * 2 / 72)
-
-# Row heights
-HEADER_ROW_H_IN = 0.36
-DATA_ROW_BASE_H = 0.32   # minimum height for one line of pt12
-
-# Font
-PT_TITLE  = 18
-PT_HEADER = 12
-PT_BODY   = 12
+# Typography
 FONT      = "Calibri"
+PT_TITLE  = 18     # title slide / slide title
+PT_HDG    = 11     # block heading text
+PT_HEADER = 11     # table column header
+PT_BODY   = 11     # table body
 
+# Row geometry (sized for pt11)
+HDR_H      = 0.32   # table header row height (inches)
+ROW_BASE_H = 0.28   # base height per data row (one line)
+ROW_PAD_H  = 0.05   # top+bottom cell padding
+CHAR_W_IN  = 0.078  # approximate Calibri-11 char width in inches
+
+# Block heading height (text box above each table)
+BLOCK_HDG_H  = 0.30   # inches
+BLOCK_GAP    = 0.18   # gap between bottom of one block and top of next
+
+# XML namespace
 NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
 
-# ── Public entry point ────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# PUBLIC
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def generate_summary_pptx(output_path, summary_data, printer, variant,
                            sub_assembly, year, quarter):
@@ -73,73 +92,204 @@ def generate_summary_pptx(output_path, summary_data, printer, variant,
 
     _add_title_slide(prs, printer, variant, sub_assembly, year, quarter)
 
-    for (tray, mode) in _collect_tray_mode_combos(summary_data):
-        slide_title = f"Input Tray: {tray}   |   Print Mode: {mode}"
-        all_rows    = _build_table_rows(summary_data, tray, mode)
-        pages       = _paginate_by_height(all_rows, TABLE_AVAIL_H)
+    # Build all blocks: each block = (heading_str, flat_rows)
+    # grouped by (tray, category)
+    all_blocks = _build_all_blocks(summary_data)
 
-        for page_idx, page_rows in enumerate(pages):
-            title = slide_title if page_idx == 0 else f"{slide_title}  (cont.)"
-            _add_content_slide(prs, title, page_rows)
+    # Paginate blocks onto slides
+    slides = _paginate_blocks(all_blocks)
+
+    for slide_blocks in slides:
+        _add_content_slide(prs, slide_blocks)
 
     prs.save(output_path)
     print(f"✓ Summary PowerPoint saved: {output_path}")
 
 
-# ── Height-aware pagination ───────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUILD BLOCKS
+# Each block: {"heading": str, "rows": [flat_row, ...], "cont": bool}
+# ═══════════════════════════════════════════════════════════════════════════════
 
-def _estimate_row_height(row_cols):
+def _build_all_blocks(summary_data):
     """
-    Estimate the rendered height of a data row in inches.
-    Checks every cell and takes the maximum line-wrap count across columns.
-    Returns height in inches.
+    Build one block per (tray, category) combination.
+    Each block contains flat rows for that combination.
+    Columns: print_mode | media_type | result | error | media_name | units
     """
+    # Collect unique (tray, category) combos in order
+    combos = []
+    seen   = set()
+    for cat in summary_data["categories"]:
+        cat_name = cat["category"]
+        for m in cat["media_summaries"]:
+            key = (m["tray"], cat_name)
+            if key not in seen:
+                seen.add(key)
+                combos.append(key)
+
+    blocks = []
+    for (tray, cat_name) in combos:
+        heading  = f"Input Tray: {tray}   |   Category: {cat_name}"
+        flat_rows = _build_flat_rows(summary_data, tray, cat_name)
+        if flat_rows:
+            blocks.append({"heading": heading, "rows": flat_rows, "cont": False})
+
+    return blocks
+
+
+def _build_flat_rows(summary_data, tray, cat_name):
+    """
+    Build flat rows for one (tray, category) block.
+    Applies blank-cell pattern so vertical merges can be detected:
+      - mode, media, result: blank on all rows except first for that media group
+      - error label: blank on all rows except first for that error group
+    """
+    rows = []
+
+    for cat in summary_data["categories"]:
+        if cat["category"] != cat_name:
+            continue
+
+        media_list = [
+            m for m in cat["media_summaries"]
+            if m["tray"] == tray
+        ]
+
+        for media in media_list:
+            mode   = str(media["mode"]) if media["mode"] else ""
+            m_type = media["media_type"]
+            result = media["overall_result"]
+            errors = media.get("errors", [])
+
+            if result != "FAIL" or not errors:
+                rows.append(_flat(mode, m_type, result, "", "", ""))
+                continue
+
+            first_media_row = True
+
+            for err in errors:
+                label         = f"{err['error']}: {err['rate']:.3f}/K"
+                first_err_row = True
+
+                for entry in err["failed_media"]:
+                    units = ", ".join(entry["units"]) if entry["units"] else ""
+                    rows.append(_flat(
+                        mode   if first_media_row else "",
+                        m_type if first_media_row else "",
+                        result if first_media_row else "",
+                        label  if first_err_row   else "",
+                        entry["media_name"],
+                        units
+                    ))
+                    first_media_row = False
+                    first_err_row   = False
+
+    return rows
+
+
+def _flat(mode, media, result, error, media_name, units):
+    return {"mode": mode, "media": media, "result": result,
+            "error": error, "media_name": media_name, "units": units,
+            "cols": [mode, media, result, error, media_name, units]}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HEIGHT ESTIMATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _estimate_row_h(row):
     max_lines = 1
-
-    for ci, text in enumerate(row_cols):
+    for ci, text in enumerate(row["cols"]):
         if not text:
             continue
-        col_w = COL_WIDTHS[ci]
-        usable_w = col_w - 0.08   # subtract left+right padding
-        chars_per_line = max(1, int(usable_w / CHAR_WIDTH_INCHES))
-        lines = math.ceil(len(str(text)) / chars_per_line)
-        lines = max(1, lines)
+        usable = max(0.1, COL_W[ci] - 0.10)
+        cpl    = max(1, int(usable / CHAR_W_IN))
+        lines  = max(1, math.ceil(len(str(text)) / cpl))
         max_lines = max(max_lines, lines)
+    return ROW_BASE_H * max_lines + ROW_PAD_H
 
-    return DATA_ROW_BASE_H * max_lines + CELL_PAD_H
+
+def _block_height(block):
+    """Total height of heading + table for a block."""
+    rows_h = HDR_H + sum(_estimate_row_h(r) for r in block["rows"])
+    return BLOCK_HDG_H + rows_h
 
 
-def _paginate_by_height(rows, avail_height_inches):
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGINATION
+# Fit as many blocks as possible per slide.
+# If a block is too tall for a slide on its own, split its rows.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _paginate_blocks(all_blocks):
     """
-    Split rows into pages such that no page's table exceeds avail_height_inches.
-    Accounts for: header row height + sum of estimated data row heights.
+    Returns list of slides. Each slide is a list of positioned blocks:
+    [{"heading": str, "rows": [...], "cont": bool}, ...]
     """
-    if not rows:
-        return [[]]
-
-    pages = []
+    slides       = []
     current_page = []
-    # Start with header row height already consumed
-    used = HEADER_ROW_H_IN
+    used_h       = 0.0
 
-    for row in rows:
-        row_h = _estimate_row_height(row["cols"])
-        if current_page and (used + row_h) > avail_height_inches:
-            # This row won't fit — start a new page
-            pages.append(current_page)
-            current_page = [row]
-            used = HEADER_ROW_H_IN + row_h
-        else:
-            current_page.append(row)
-            used += row_h
+    def flush():
+        nonlocal current_page, used_h
+        if current_page:
+            slides.append(current_page)
+        current_page = []
+        used_h       = 0.0
 
-    if current_page:
-        pages.append(current_page)
+    for block in all_blocks:
+        bh = _block_height(block)
 
-    return pages
+        # Does the whole block fit on current slide?
+        gap = BLOCK_GAP if current_page else 0.0
+
+        if used_h + gap + bh <= AVAIL_H:
+            current_page.append(block)
+            used_h += gap + bh
+            continue
+
+        # Doesn't fit whole — try splitting rows
+        # First flush current page if non-empty
+        if current_page:
+            flush()
+
+        # Now try to fit rows of this block across one or more fresh slides
+        remaining_rows = list(block["rows"])
+        first_chunk    = True
+
+        while remaining_rows:
+            chunk      = []
+            avail      = AVAIL_H - BLOCK_HDG_H - HDR_H
+            chunk_h    = 0.0
+
+            for row in remaining_rows:
+                rh = _estimate_row_h(row)
+                if chunk and chunk_h + rh > avail:
+                    break
+                chunk.append(row)
+                chunk_h += rh
+
+            if not chunk:
+                # Single row too tall — force it anyway
+                chunk = [remaining_rows[0]]
+
+            heading = block["heading"] if first_chunk \
+                      else block["heading"] + "  (cont.)"
+
+            slides.append([{"heading": heading,
+                             "rows":    chunk,
+                             "cont":    not first_chunk}])
+            remaining_rows = remaining_rows[len(chunk):]
+            first_chunk    = False
+
+    flush()
+    return slides
 
 
-# ── Title slide ───────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# TITLE SLIDE
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def _add_title_slide(prs, printer, variant, sub_assembly, year, quarter):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -147,213 +297,196 @@ def _add_title_slide(prs, printer, variant, sub_assembly, year, quarter):
     slide.background.fill.fore_color.rgb = COL_WHITE
 
     bar = slide.shapes.add_shape(
-        1, Inches(0), Inches(0), Inches(SLIDE_W), Inches(2.8)
-    )
+        1, Inches(0), Inches(0), Inches(SLIDE_W), Inches(2.8))
     bar.fill.solid()
     bar.fill.fore_color.rgb = COL_NAVY
     bar.line.fill.background()
 
-    def add_text(text, y, h, size, bold=False, color=COL_WHITE,
-                 align=PP_ALIGN.CENTER):
+    def add_text(text, y, h, size, bold=False,
+                 color=COL_WHITE, align=PP_ALIGN.CENTER):
         txb = slide.shapes.add_textbox(
-            Inches(0.5), Inches(y), Inches(SLIDE_W - 1.0), Inches(h)
-        )
+            Inches(0.5), Inches(y), Inches(SLIDE_W - 1.0), Inches(h))
         tf = txb.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.alignment = align
         run = p.add_run()
-        run.text = text
-        run.font.size = Pt(size)
-        run.font.bold = bold
+        run.text           = text
+        run.font.size      = Pt(size)
+        run.font.bold      = bold
         run.font.color.rgb = color
-        run.font.name = FONT
+        run.font.name      = FONT
 
     add_text("Life Test Data Analysis", 0.5, 0.8, 28, bold=True)
     add_text(f"{printer}  ·  {variant}  ·  {sub_assembly}", 1.4, 0.6, 18)
-    add_text(f"Q{quarter}  FY{year}", 3.1, 0.6, 22, bold=True, color=COL_NAVY)
-    add_text(
-        f"Generated: {datetime.now().strftime('%d %b %Y   %H:%M')}",
-        3.9, 0.5, 11, color=RGBColor(0x60, 0x60, 0x60)
-    )
+    add_text(f"Q{quarter}  FY{year}", 3.1, 0.6, 22,
+             bold=True, color=COL_NAVY)
+    add_text(f"Generated: {datetime.now().strftime('%d %b %Y   %H:%M')}",
+             3.9, 0.5, 11, color=RGBColor(0x60, 0x60, 0x60))
 
 
-# ── Content slide ─────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONTENT SLIDE — renders multiple heading+table blocks
+# ═══════════════════════════════════════════════════════════════════════════════
 
-def _add_content_slide(prs, title_text, data_rows):
+def _add_content_slide(prs, slide_blocks):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.background.fill.solid()
     slide.background.fill.fore_color.rgb = COL_WHITE
 
-    # Slide title
-    txb = slide.shapes.add_textbox(
-        Inches(MARGIN), Inches(0.10),
-        Inches(TABLE_W), Inches(0.62)
-    )
-    tf = txb.text_frame
-    p  = tf.paragraphs[0]
-    p.alignment = PP_ALIGN.LEFT
-    run = p.add_run()
-    run.text = title_text
-    run.font.size = Pt(PT_TITLE)
-    run.font.bold = True
-    run.font.color.rgb = COL_BLACK
-    run.font.name = FONT
+    cursor_y = SLIDE_TOP   # current vertical position in inches
 
-    if not data_rows:
-        return
+    for block_idx, block in enumerate(slide_blocks):
+        if block_idx > 0:
+            cursor_y += BLOCK_GAP
 
-    # Calculate actual row heights for this page
-    row_heights_in = [_estimate_row_height(r["cols"]) for r in data_rows]
-    total_h = HEADER_ROW_H_IN + sum(row_heights_in)
-    # Cap at available height just in case
-    total_h = min(total_h, TABLE_AVAIL_H)
+        heading   = block["heading"]
+        flat_rows = block["rows"]
 
-    n_total   = 1 + len(data_rows)
-    tbl_shape = slide.shapes.add_table(
-        n_total, len(HEADERS),
-        Inches(TABLE_X), Inches(TABLE_Y),
-        Inches(TABLE_W), Inches(total_h)
-    )
-    tbl = tbl_shape.table
+        # ── Block heading text box ────────────────────────────────────────────
+        txb = slide.shapes.add_textbox(
+            Inches(MARGIN), Inches(cursor_y),
+            Inches(TABLE_W), Inches(BLOCK_HDG_H)
+        )
+        tf = txb.text_frame
+        p  = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.LEFT
+        run = p.add_run()
+        run.text           = heading
+        run.font.size      = Pt(PT_HDG)
+        run.font.bold      = True
+        run.font.color.rgb = COL_BLACK
+        run.font.name      = FONT
 
-    # Strip table band style so cell-level borders are not overridden
-    _clear_table_style(tbl)
+        cursor_y += BLOCK_HDG_H
 
-    # Column widths
-    for ci, cw in enumerate(COL_WIDTHS):
-        tbl.columns[ci].width = Inches(cw)
-
-    # ── Header row ────────────────────────────────────────────────────────────
-    for ci, hdr in enumerate(HEADERS):
-        cell = tbl.cell(0, ci)
-        cell.fill.solid()
-        cell.fill.fore_color.rgb = COL_BLUE
-        _set_cell_text(cell, hdr, bold=True, fg=COL_WHITE,
-                       size=PT_HEADER, align=PP_ALIGN.CENTER)
-        _apply_black_border(cell)
-
-    # ── Data rows ─────────────────────────────────────────────────────────────
-    for ri, row_meta in enumerate(data_rows):
-        tbl_row = ri + 1
-        cols    = row_meta["cols"]
-
-        for ci, val in enumerate(cols):
-            cell = tbl.cell(tbl_row, ci)
-            cell.fill.solid()
-            cell.fill.fore_color.rgb = COL_WHITE
-
-            if ci == 2 and val in ("PASS", "FAIL"):
-                if val == "PASS":
-                    cell.fill.fore_color.rgb = COL_PASS_BG
-                    _set_cell_text(cell, val, bold=True, fg=COL_PASS_FG,
-                                   size=PT_BODY, align=PP_ALIGN.CENTER)
-                else:
-                    cell.fill.fore_color.rgb = COL_FAIL_BG
-                    _set_cell_text(cell, val, bold=True, fg=COL_FAIL_FG,
-                                   size=PT_BODY, align=PP_ALIGN.CENTER)
-                _apply_black_border(cell)
-                continue
-
-            _set_cell_text(cell, str(val) if val else "",
-                           size=PT_BODY, align=PP_ALIGN.LEFT)
-            _apply_black_border(cell)
-
-    # ── Row heights ───────────────────────────────────────────────────────────
-    tbl.rows[0].height = Inches(HEADER_ROW_H_IN)
-    for ri, h in enumerate(row_heights_in):
-        tbl.rows[ri + 1].height = Inches(h)
-
-
-# ── Table row builder ─────────────────────────────────────────────────────────
-
-def _build_table_rows(summary_data, tray, mode):
-    rows = []
-
-    for cat in summary_data["categories"]:
-        category_name = cat["category"]
-
-        media_list = [
-            m for m in cat["media_summaries"]
-            if m["tray"] == tray and m["mode"] == mode
-        ]
-        if not media_list:
+        if not flat_rows:
             continue
 
-        first_cat_row = True
+        # ── Table ─────────────────────────────────────────────────────────────
+        row_heights = [_estimate_row_h(r) for r in flat_rows]
+        table_h     = min(HDR_H + sum(row_heights),
+                          SLIDE_BOTTOM - cursor_y)
+        n_total     = 1 + len(flat_rows)
 
-        for media in media_list:
-            media_type     = media["media_type"]
-            overall_result = media["overall_result"]
-            errors         = media.get("errors", [])
+        tbl_shape = slide.shapes.add_table(
+            n_total, N_COLS,
+            Inches(TABLE_X), Inches(cursor_y),
+            Inches(TABLE_W), Inches(table_h)
+        )
+        tbl = tbl_shape.table
 
-            if overall_result != "FAIL" or not errors:
-                rows.append({
-                    "cols": [
-                        category_name if first_cat_row else "",
-                        media_type,
-                        overall_result,
-                        "", "", ""
-                    ],
-                    "result": overall_result
-                })
-                first_cat_row = False
-                continue
+        _clear_table_style(tbl)
 
-            first_media_row = True
+        for ci, cw in enumerate(COL_W):
+            tbl.columns[ci].width = Inches(cw)
 
-            for err in errors:
-                error_label   = f"{err['error']}: {err['rate']:.3f}/K"
-                first_err_row = True
+        # Header row
+        for ci, hdr in enumerate(HEADERS):
+            cell = tbl.cell(0, ci)
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = COL_BLUE
+            _set_text(cell, hdr, bold=True, fg=COL_WHITE,
+                      size=PT_HEADER, align=PP_ALIGN.CENTER)
+            _set_border(cell)
 
-                for entry in err["failed_media"]:
-                    media_name = entry["media_name"]
-                    units_str  = ", ".join(entry["units"]) if entry["units"] else ""
+        # Data rows
+        for ri, row in enumerate(flat_rows):
+            tr   = ri + 1
+            cols = row["cols"]
 
-                    rows.append({
-                        "cols": [
-                            category_name  if first_cat_row   else "",
-                            media_type     if first_media_row else "",
-                            overall_result if first_media_row else "",
-                            error_label    if first_err_row   else "",
-                            media_name,
-                            units_str
-                        ],
-                        "result": overall_result
-                    })
+            for ci, val in enumerate(cols):
+                cell = tbl.cell(tr, ci)
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = COL_WHITE
 
-                    first_cat_row   = False
-                    first_media_row = False
-                    first_err_row   = False
+                if ci == 2 and val in ("PASS", "FAIL"):
+                    if val == "PASS":
+                        cell.fill.fore_color.rgb = COL_PASS_BG
+                        _set_text(cell, val, bold=True, fg=COL_PASS_FG,
+                                  size=PT_BODY, align=PP_ALIGN.CENTER)
+                    else:
+                        cell.fill.fore_color.rgb = COL_FAIL_BG
+                        _set_text(cell, val, bold=True, fg=COL_FAIL_FG,
+                                  size=PT_BODY, align=PP_ALIGN.CENTER)
+                    _set_border(cell)
+                    continue
 
-    return rows
+                _set_text(cell, str(val) if val else "",
+                          size=PT_BODY, align=PP_ALIGN.LEFT)
+                _set_border(cell)
+
+        # Row heights
+        tbl.rows[0].height = Inches(HDR_H)
+        for ri, h in enumerate(row_heights):
+            tbl.rows[ri + 1].height = Inches(h)
+
+        # Vertical merges on cols 0-3
+        _apply_vertical_merges(tbl, flat_rows)
+
+        cursor_y += table_h
 
 
-# ── XML helpers ───────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# VERTICAL MERGE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _apply_vertical_merges(tbl, flat_rows):
+    """
+    Apply vertical cell merges on columns 0-3 based on blank-cell pattern.
+    Blank value = consumed by merge above.
+    """
+    for ci in range(4):   # cols 0,1,2,3
+        ri = 0
+        n  = len(flat_rows)
+        while ri < n:
+            val = flat_rows[ri]["cols"][ci]
+            if val != "":
+                span = 1
+                while ri + span < n and flat_rows[ri + span]["cols"][ci] == "":
+                    span += 1
+                if span > 1:
+                    _set_rowspan(tbl.cell(ri + 1, ci), span)
+                    for k in range(1, span):
+                        _mark_vmerge(tbl.cell(ri + 1 + k, ci))
+                ri += span
+            else:
+                ri += 1
+
+
+def _set_rowspan(cell, span):
+    tc   = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    tcPr.set("rowSpan", str(span))
+
+
+def _mark_vmerge(cell):
+    tc = cell._tc
+    for tb in tc.findall(f"{{{NS}}}txBody"):
+        tc.remove(tb)
+    tcPr = tc.get_or_add_tcPr()
+    tcPr.set("vMerge", "1")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# XML / CELL HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def _clear_table_style(tbl):
-    """
-    Remove PowerPoint's built-in table band/style so cell-level border
-    and fill settings are not overridden by the theme.
-    """
     tblPr = tbl._tbl.find(f"{{{NS}}}tblPr")
     if tblPr is None:
         return
-    style_el = tblPr.find(f"{{{NS}}}tableStyleId")
-    if style_el is not None:
-        style_el.text = "{00000000-0000-0000-0000-000000000000}"
-    for attr in ("bandRow", "bandCol", "firstRow", "firstCol", "lastRow", "lastCol"):
+    sid = tblPr.find(f"{{{NS}}}tableStyleId")
+    if sid is not None:
+        sid.text = "{00000000-0000-0000-0000-000000000000}"
+    for attr in ("bandRow", "bandCol", "firstRow",
+                 "firstCol", "lastRow", "lastCol"):
         tblPr.set(attr, "0")
 
 
-def _apply_black_border(cell):
-    """
-    Write 1pt solid black border on all four sides of a table cell.
-    Done via direct XML manipulation — python-pptx has no public API for this.
-    """
+def _set_border(cell):
     tc   = cell._tc
     tcPr = tc.get_or_add_tcPr()
-
     for tag in ("lnL", "lnR", "lnT", "lnB"):
         for el in tcPr.findall(f"{{{NS}}}{tag}"):
             tcPr.remove(el)
@@ -362,34 +495,23 @@ def _apply_black_border(cell):
         etree.SubElement(sf, f"{{{NS}}}srgbClr", attrib={"val": "000000"})
 
 
-def _set_cell_text(cell, text, bold=False, fg=None,
-                   size=PT_BODY, align=PP_ALIGN.LEFT):
+def _set_text(cell, text, bold=False, fg=None,
+              size=PT_BODY, align=PP_ALIGN.LEFT):
     tf = cell.text_frame
-    tf.word_wrap = True
-    tf.margin_left   = Pt(3)
-    tf.margin_right  = Pt(3)
+    tf.word_wrap    = True
+    tf.margin_left  = Pt(3)
+    tf.margin_right = Pt(3)
     tf.margin_top    = Pt(2)
     tf.margin_bottom = Pt(2)
 
     p = tf.paragraphs[0]
     p.alignment = align
-
     for run in p.runs:
         run.text = ""
 
     run = p.add_run()
-    run.text = text
-    run.font.size = Pt(size)
-    run.font.bold = bold
-    run.font.name = FONT
+    run.text           = text
+    run.font.size      = Pt(size)
+    run.font.bold      = bold
+    run.font.name      = FONT
     run.font.color.rgb = fg if fg else COL_BLACK
-
-
-# ── Misc ──────────────────────────────────────────────────────────────────────
-
-def _collect_tray_mode_combos(summary_data):
-    combos = set()
-    for cat in summary_data["categories"]:
-        for m in cat["media_summaries"]:
-            combos.add((m["tray"], m["mode"]))
-    return sorted(combos, key=lambda x: (str(x[0]), str(x[1])))
