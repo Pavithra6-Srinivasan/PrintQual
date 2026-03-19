@@ -224,9 +224,16 @@ class PivotSummaryEngine:
                     failed_units = []
 
                     if not unit_media.empty and "Media Name" in unit_media.columns:
+                        # Filter by: correct media name, unit failed overall,
+                        # AND unit has a non-zero rate for THIS specific error column.
+                        # This prevents the same unit appearing under every error type
+                        # just because it failed overall.
+                        col_mask = pd.to_numeric(unit_media[col], errors="coerce").fillna(0) > 0                             if col in unit_media.columns else pd.Series([False] * len(unit_media))
+
                         unit_rows = unit_media[
                             (unit_media["Media Name"].astype(str).str.strip() == media_name_str) &
-                            (unit_media["Result"].astype(str).str.upper() == "FAIL")
+                            (unit_media["Result"].astype(str).str.upper() == "FAIL") &
+                            col_mask
                         ]
 
                         if "Unit" in unit_rows.columns:
