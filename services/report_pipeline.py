@@ -6,6 +6,7 @@ Generates:
   2. PowerPoint  — summary slides (one slide per Input Tray / Print Mode combo)
 """
 
+import os
 from pathlib import Path
 from datetime import datetime
 from services.pivot_service import PivotService
@@ -92,6 +93,12 @@ class ReportPipeline:
                 year=year,
                 quarter=quarter
             )
+            # Auto-open the PowerPoint on Windows
+            try:
+                os.startfile(str(pptx_path))
+                print(f"✓ PowerPoint opened automatically")
+            except Exception as open_err:
+                print(f"⚠ Could not auto-open PowerPoint: {open_err}")
         except Exception as e:
             print(f"⚠ PowerPoint generation failed: {e}")
             import traceback

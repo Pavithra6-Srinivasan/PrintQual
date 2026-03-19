@@ -42,39 +42,39 @@ COL_FAIL_BG = RGBColor(0xFF, 0xC7, 0xCE)
 COL_FAIL_FG = RGBColor(0xC0, 0x00, 0x00)
 COL_NAVY    = RGBColor(0x1E, 0x27, 0x61)
 
-# ── Slide geometry (4:3, inches) ──────────────────────────────────────────────
+# ── Slide geometry (16:9 widescreen, inches) ─────────────────────────────────
 SLIDE_W       = 10.0
-SLIDE_H       = 7.5
+SLIDE_H       = 5.625
 MARGIN        = 0.25
 TABLE_X       = MARGIN
 TABLE_W       = SLIDE_W - 2 * MARGIN   # 9.5"
 SLIDE_TOP     = 0.20                    # where content starts
-SLIDE_BOTTOM  = 7.40                    # furthest content can reach
-AVAIL_H       = SLIDE_BOTTOM - SLIDE_TOP  # 7.20" total per slide
+SLIDE_BOTTOM  = 5.50                    # furthest content can reach
+AVAIL_H       = SLIDE_BOTTOM - SLIDE_TOP  # 5.30" total per slide
 
 # Column widths — must sum to TABLE_W = 9.5"
-# PrintMode | MediaType | Result | Error | MediaName | Units
+# MediaType | PrintMode | Result | Error | MediaName | Units
 COL_W   = [1.20, 1.15, 1.10, 1.70, 2.85, 1.50]
-HEADERS = ["Print Mode", "Media Type", "Overall Result",
-           "Error Type & Rate", "Failed Media Name", "Failed Units"]
+HEADERS = ["Media Type", "Print Mode", "Overall Result",
+           "Error Type", "Media Name", "Unit"]
 N_COLS  = len(HEADERS)
 
 # Typography
 FONT      = "Calibri"
 PT_TITLE  = 18     # title slide / slide title
-PT_HDG    = 11     # block heading text
-PT_HEADER = 11     # table column header
-PT_BODY   = 11     # table body
+PT_HDG    = 10     # block heading text
+PT_HEADER = 9      # table column header
+PT_BODY   = 9      # table body
 
-# Row geometry (sized for pt11)
-HDR_H      = 0.32   # table header row height (inches)
-ROW_BASE_H = 0.28   # base height per data row (one line)
-ROW_PAD_H  = 0.05   # top+bottom cell padding
-CHAR_W_IN  = 0.078  # approximate Calibri-11 char width in inches
+# Row geometry (sized for pt9)
+HDR_H      = 0.22   # table header row height (inches)
+ROW_BASE_H = 0.17   # base height per data row (one line)
+ROW_PAD_H  = 0.02   # top+bottom cell padding
+CHAR_W_IN  = 0.064  # approximate Calibri-9 char width in inches
 
 # Block heading height (text box above each table)
-BLOCK_HDG_H  = 0.30   # inches
-BLOCK_GAP    = 0.18   # gap between bottom of one block and top of next
+BLOCK_HDG_H  = 0.25   # inches
+BLOCK_GAP    = 0.15   # gap between bottom of one block and top of next
 
 # XML namespace
 NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -140,58 +140,84 @@ def _build_all_blocks(summary_data):
 
 def _build_flat_rows(summary_data, tray, cat_name):
     """
-    Build flat rows for one (tray, category) block.
-    Applies blank-cell pattern so vertical merges can be detected:
-      - mode, media, result: blank on all rows except first for that media group
-      - error label: blank on all rows except first for that error group
+    Build flat rows grouped by media type first, then print mode.
+    NO SPEC rows show error type only — no media name expansion.
     """
-    rows = []
-
+    raw = []
     for cat in summary_data["categories"]:
         if cat["category"] != cat_name:
             continue
+        for m in cat["media_summaries"]:
+            if m["tray"] == tray:
+                raw.append(m)
 
-        media_list = [
-            m for m in cat["media_summaries"]
-            if m["tray"] == tray
-        ]
+    if not raw:
+        return []
 
-        for media in media_list:
+    # Group by media_type preserving first-appearance order
+    media_order  = []
+    media_groups = {}
+    for m in raw:
+        mt = m["media_type"]
+        if mt not in media_groups:
+            media_order.append(mt)
+            media_groups[mt] = []
+        media_groups[mt].append(m)
+
+    rows = []
+
+    for mt in media_order:
+        first_media_row = True
+
+        for media in media_groups[mt]:
             mode   = str(media["mode"]) if media["mode"] else ""
-            m_type = media["media_type"]
             result = media["overall_result"]
             errors = media.get("errors", [])
 
-            if result != "FAIL" or not errors:
-                rows.append(_flat(mode, m_type, result, "", "", ""))
+            if result not in ("FAIL", "NO SPEC") or not errors:
+                rows.append(_flat(
+                    mt if first_media_row else "",
+                    mode, result, "", "", ""
+                ))
+                first_media_row = False
                 continue
 
-            first_media_row = True
+            first_mode_row = True
 
             for err in errors:
-                label         = f"{err['error']}: {err['rate']:.3f}/K"
-                first_err_row = True
+                label = f"{err['error']}: {err['rate']:.3f}/K"
 
-                for entry in err["failed_media"]:
-                    units = ", ".join(entry["units"]) if entry["units"] else ""
+                if result == "NO SPEC":
                     rows.append(_flat(
-                        mode   if first_media_row else "",
-                        m_type if first_media_row else "",
-                        result if first_media_row else "",
-                        label  if first_err_row   else "",
-                        entry["media_name"],
-                        units
+                        mt     if first_media_row else "",
+                        mode   if first_mode_row  else "",
+                        result if first_mode_row  else "",
+                        label, "", ""
                     ))
                     first_media_row = False
-                    first_err_row   = False
+                    first_mode_row  = False
+                else:
+                    first_err_row = True
+                    for entry in err["failed_media"]:
+                        units = ", ".join(entry["units"]) if entry["units"] else ""
+                        rows.append(_flat(
+                            mt     if first_media_row else "",
+                            mode   if first_mode_row  else "",
+                            result if first_mode_row  else "",
+                            label  if first_err_row   else "",
+                            entry["media_name"], units
+                        ))
+                        first_media_row = False
+                        first_mode_row  = False
+                        first_err_row   = False
 
     return rows
 
 
-def _flat(mode, media, result, error, media_name, units):
-    return {"mode": mode, "media": media, "result": result,
+def _flat(media, mode, result, error, media_name, units):
+    return {"media": media, "mode": mode, "result": result,
             "error": error, "media_name": media_name, "units": units,
-            "cols": [mode, media, result, error, media_name, units]}
+            "cols": [media, mode, result, error, media_name, units]}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -297,7 +323,7 @@ def _add_title_slide(prs, printer, variant, sub_assembly, year, quarter):
     slide.background.fill.fore_color.rgb = COL_WHITE
 
     bar = slide.shapes.add_shape(
-        1, Inches(0), Inches(0), Inches(SLIDE_W), Inches(2.8))
+        1, Inches(0), Inches(0), Inches(SLIDE_W), Inches(2.0))
     bar.fill.solid()
     bar.fill.fore_color.rgb = COL_NAVY
     bar.line.fill.background()
@@ -317,12 +343,12 @@ def _add_title_slide(prs, printer, variant, sub_assembly, year, quarter):
         run.font.color.rgb = color
         run.font.name      = FONT
 
-    add_text("Life Test Data Analysis", 0.5, 0.8, 28, bold=True)
-    add_text(f"{printer}  ·  {variant}  ·  {sub_assembly}", 1.4, 0.6, 18)
-    add_text(f"Q{quarter}  FY{year}", 3.1, 0.6, 22,
+    add_text("Life Test Data Analysis", 0.3, 0.6, 26, bold=True)
+    add_text(f"{printer}  ·  {variant}  ·  {sub_assembly}", 1.0, 0.5, 16)
+    add_text(f"Q{quarter}  FY{year}", 2.2, 0.5, 20,
              bold=True, color=COL_NAVY)
     add_text(f"Generated: {datetime.now().strftime('%d %b %Y   %H:%M')}",
-             3.9, 0.5, 11, color=RGBColor(0x60, 0x60, 0x60))
+             2.9, 0.4, 11, color=RGBColor(0x60, 0x60, 0x60))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -400,14 +426,19 @@ def _add_content_slide(prs, slide_blocks):
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = COL_WHITE
 
-                if ci == 2 and val in ("PASS", "FAIL"):
+                if ci == 2 and val in ("PASS", "FAIL", "NO SPEC"):
                     if val == "PASS":
                         cell.fill.fore_color.rgb = COL_PASS_BG
                         _set_text(cell, val, bold=True, fg=COL_PASS_FG,
                                   size=PT_BODY, align=PP_ALIGN.CENTER)
-                    else:
+                    elif val == "FAIL":
                         cell.fill.fore_color.rgb = COL_FAIL_BG
                         _set_text(cell, val, bold=True, fg=COL_FAIL_FG,
+                                  size=PT_BODY, align=PP_ALIGN.CENTER)
+                    else:
+                        cell.fill.fore_color.rgb = RGBColor(0xD9, 0xD9, 0xD9)
+                        _set_text(cell, val, bold=True,
+                                  fg=RGBColor(0x40, 0x40, 0x40),
                                   size=PT_BODY, align=PP_ALIGN.CENTER)
                     _set_border(cell)
                     continue
@@ -499,10 +530,10 @@ def _set_text(cell, text, bold=False, fg=None,
               size=PT_BODY, align=PP_ALIGN.LEFT):
     tf = cell.text_frame
     tf.word_wrap    = True
-    tf.margin_left  = Pt(3)
-    tf.margin_right = Pt(3)
-    tf.margin_top    = Pt(2)
-    tf.margin_bottom = Pt(2)
+    tf.margin_left  = Pt(2)
+    tf.margin_right = Pt(2)
+    tf.margin_top    = Pt(1)
+    tf.margin_bottom = Pt(1)
 
     p = tf.paragraphs[0]
     p.alignment = align

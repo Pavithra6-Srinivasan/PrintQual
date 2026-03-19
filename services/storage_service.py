@@ -27,9 +27,6 @@ class StorageService:
         with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
             formatter = ExcelFormatter()
 
-            # Summary sheet first
-            self._write_summary_sheet(writer, summary_data)
-
             # One sheet per category
             for category_name, pivot_data in all_pivots.items():
                 config = pivot_data["config"]

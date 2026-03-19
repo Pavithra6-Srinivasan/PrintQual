@@ -99,6 +99,10 @@ class PivotSummaryEngine:
                             errors = self._build_error_list(
                                 gt_media, unit_media, per_k_cols
                             )
+                        elif overall_result == "NO SPEC":
+                            errors = self._build_no_spec_error_list(
+                                gt_media, per_k_cols
+                            )
 
                         media_summaries.append({
                             "media_type":     media_type,
@@ -168,7 +172,7 @@ class PivotSummaryEngine:
 
         if all(r in ("NO SPEC PROVIDED", "SPEC NOT FOUND", "NO DATA")
                for r in results):
-            return results[0]
+            return "NO SPEC"
 
         if "FAIL" in results:
             return "FAIL"
@@ -273,6 +277,52 @@ class PivotSummaryEngine:
         # Sort by rate descending — no cap
         error_candidates.sort(key=lambda x: x["rate"], reverse=True)
         return error_candidates
+
+    # ------------------------------------------------------------------
+    # NO SPEC ERROR LIST BUILDER
+    # ------------------------------------------------------------------
+
+    def _build_no_spec_error_list(self, gt_media, per_k_cols):
+        """
+        For categories with no spec (e.g. Other Defects, PQ):
+        - Find error columns with non-zero rates on any Grand Total row
+        - Rank by max rate descending, take top 5
+        - For each error, list media names with non-zero rate
+        - No units listed (not applicable without spec)
+        """
+        NO_SPEC_TOP_N = 5
+        error_candidates = []
+
+        for col in per_k_cols:
+            if col not in gt_media.columns:
+                continue
+
+            rates = pd.to_numeric(gt_media[col], errors="coerce").fillna(0)
+            max_rate = rates.max()
+
+            if max_rate <= 0:
+                continue
+
+            # Media names with non-zero rate for this error
+            failed_media_list = []
+            if "Media Name" in gt_media.columns:
+                nonzero_rows = gt_media[rates > 0]
+                for media_name in nonzero_rows["Media Name"].dropna().unique():
+                    failed_media_list.append({
+                        "media_name": str(media_name).strip(),
+                        "units": []   # no units for NO SPEC categories
+                    })
+
+            if failed_media_list:
+                error_name = col.replace("/K", "").strip()
+                error_candidates.append({
+                    "error":        error_name,
+                    "rate":         round(float(max_rate), 3),
+                    "failed_media": failed_media_list
+                })
+
+        error_candidates.sort(key=lambda x: x["rate"], reverse=True)
+        return error_candidates[:NO_SPEC_TOP_N]
 
     # ------------------------------------------------------------------
     # HELPERS
