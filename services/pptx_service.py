@@ -1,5 +1,25 @@
 """
 pptx_service.py - Summary PowerPoint Generator
+
+Layout:
+  Slide 1 : Title slide
+  Slide N+: Content slides
+
+  Each content slide can contain multiple (heading + table) blocks stacked
+  vertically. Each block corresponds to one (Input Tray + Test Category)
+  combination.
+
+  Heading: bold text box — "Input Tray: X  |  Category: Y"
+  Table columns: Print Mode | Media Type | Overall Result |
+                 Error Type & Rate | Failed Media Name | Failed Units
+
+  Pagination:
+  - Fit as many blocks as possible per slide
+  - If a block (heading + table) does not fit, move entire block to next slide
+  - If a single table is too tall on its own, split it across slides
+    with heading repeated as "(cont.)"
+
+Font: 11pt throughout table
 """
 
 import copy
@@ -33,9 +53,9 @@ SLIDE_BOTTOM  = 5.50                    # furthest content can reach
 AVAIL_H       = SLIDE_BOTTOM - SLIDE_TOP  # 5.30" total per slide
 
 # Column widths — must sum to TABLE_W = 9.5"
-# MediaType | PrintMode | Result | Error | MediaName | Units
-COL_W   = [1.20, 1.15, 1.10, 1.70, 2.85, 1.50]
-HEADERS = ["Media Type", "Print Mode", "Overall Result",
+# MediaType | PrintMode | Spec | Result | Error | MediaName | Units
+COL_W   = [1.10, 1.00, 0.75, 1.00, 1.55, 2.60, 1.50]
+HEADERS = ["Media Type", "Print Mode", "Spec", "Overall Result",
            "Error Type", "Media Name", "Unit"]
 N_COLS  = len(HEADERS)
 
@@ -118,8 +138,12 @@ def _build_all_blocks(summary_data):
 
 def _build_flat_rows(summary_data, tray, cat_name):
     """
-    Build flat rows grouped by media type first, then print mode.
-    NO SPEC rows show error type only — no media name expansion.
+    Build flat rows grouped by media type first (Plain always first),
+    then print mode within each media type.
+    - Rates shown to 2 decimal places
+    - Media name includes its own fail rate
+    - Spec column added from media summary
+    - NO SPEC rows show error type only
     """
     raw = []
     for cat in summary_data["categories"]:
@@ -132,7 +156,7 @@ def _build_flat_rows(summary_data, tray, cat_name):
     if not raw:
         return []
 
-    # Group by media_type preserving first-appearance order
+    # Group by media_type
     media_order  = []
     media_groups = {}
     for m in raw:
@@ -141,6 +165,11 @@ def _build_flat_rows(summary_data, tray, cat_name):
             media_order.append(mt)
             media_groups[mt] = []
         media_groups[mt].append(m)
+
+    # Change 1: Plain always first
+    if "Plain" in media_order:
+        media_order.remove("Plain")
+        media_order.insert(0, "Plain")
 
     rows = []
 
@@ -151,11 +180,16 @@ def _build_flat_rows(summary_data, tray, cat_name):
             mode   = str(media["mode"]) if media["mode"] else ""
             result = media["overall_result"]
             errors = media.get("errors", [])
+            # Change 4: spec value
+            spec_val = media.get("spec", None)
+            spec_str = f"{spec_val:.2f}" if spec_val is not None else ""
 
-            if result not in ("FAIL", "NO SPEC") or not errors:
+            if result not in ("FAIL", "NO SPEC", "PASS") or not errors:
                 rows.append(_flat(
                     mt if first_media_row else "",
-                    mode, result, "", "", ""
+                    mode,
+                    spec_str if first_media_row else "",
+                    result, "", "", ""
                 ))
                 first_media_row = False
                 continue
@@ -163,13 +197,15 @@ def _build_flat_rows(summary_data, tray, cat_name):
             first_mode_row = True
 
             for err in errors:
-                label = f"{err['error']}: {err['rate']:.3f}/K"
+                # Change 2: 2dp rates
+                label = f"{err['error']}: {err['rate']:.2f}/K"
 
                 if result == "NO SPEC":
                     rows.append(_flat(
-                        mt     if first_media_row else "",
-                        mode   if first_mode_row  else "",
-                        result if first_mode_row  else "",
+                        mt       if first_media_row else "",
+                        mode     if first_mode_row  else "",
+                        spec_str if first_mode_row  else "",
+                        result   if first_mode_row  else "",
                         label, "", ""
                     ))
                     first_media_row = False
@@ -178,12 +214,18 @@ def _build_flat_rows(summary_data, tray, cat_name):
                     first_err_row = True
                     for entry in err["failed_media"]:
                         units = ", ".join(entry["units"]) if entry["units"] else ""
+                        # Change 3: include media name rate
+                        media_rate = entry.get("rate", None)
+                        media_label = entry["media_name"]
+                        if media_rate is not None:
+                            media_label = f"{entry['media_name']} ({media_rate:.2f}/K)"
                         rows.append(_flat(
-                            mt     if first_media_row else "",
-                            mode   if first_mode_row  else "",
-                            result if first_mode_row  else "",
-                            label  if first_err_row   else "",
-                            entry["media_name"], units
+                            mt       if first_media_row else "",
+                            mode     if first_mode_row  else "",
+                            spec_str if first_mode_row  else "",
+                            result   if first_mode_row  else "",
+                            label    if first_err_row   else "",
+                            media_label, units
                         ))
                         first_media_row = False
                         first_mode_row  = False
@@ -192,10 +234,10 @@ def _build_flat_rows(summary_data, tray, cat_name):
     return rows
 
 
-def _flat(media, mode, result, error, media_name, units):
-    return {"media": media, "mode": mode, "result": result,
+def _flat(media, mode, spec, result, error, media_name, units):
+    return {"media": media, "mode": mode, "spec": spec, "result": result,
             "error": error, "media_name": media_name, "units": units,
-            "cols": [media, mode, result, error, media_name, units]}
+            "cols": [media, mode, spec, result, error, media_name, units]}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -228,44 +270,20 @@ def _block_height(block):
 
 def _paginate_blocks(all_blocks):
     """
-    Returns list of slides. Each slide is a list of positioned blocks:
-    [{"heading": str, "rows": [...], "cont": bool}, ...]
+    One block per slide. If a block's rows are too tall for one slide,
+    split rows across slides with heading repeated as "(cont.)".
+    This guarantees headings never overlap tables.
     """
-    slides       = []
-    current_page = []
-    used_h       = 0.0
-
-    def flush():
-        nonlocal current_page, used_h
-        if current_page:
-            slides.append(current_page)
-        current_page = []
-        used_h       = 0.0
+    slides = []
 
     for block in all_blocks:
-        bh = _block_height(block)
-
-        # Does the whole block fit on current slide?
-        gap = BLOCK_GAP if current_page else 0.0
-
-        if used_h + gap + bh <= AVAIL_H:
-            current_page.append(block)
-            used_h += gap + bh
-            continue
-
-        # Doesn't fit whole — try splitting rows
-        # First flush current page if non-empty
-        if current_page:
-            flush()
-
-        # Now try to fit rows of this block across one or more fresh slides
         remaining_rows = list(block["rows"])
         first_chunk    = True
 
         while remaining_rows:
-            chunk      = []
-            avail      = AVAIL_H - BLOCK_HDG_H - HDR_H
-            chunk_h    = 0.0
+            chunk   = []
+            avail   = AVAIL_H - BLOCK_HDG_H - HDR_H
+            chunk_h = 0.0
 
             for row in remaining_rows:
                 rh = _estimate_row_h(row)
@@ -275,7 +293,7 @@ def _paginate_blocks(all_blocks):
                 chunk_h += rh
 
             if not chunk:
-                # Single row too tall — force it anyway
+                # Single row too tall — force it to avoid infinite loop
                 chunk = [remaining_rows[0]]
 
             heading = block["heading"] if first_chunk \
@@ -287,7 +305,6 @@ def _paginate_blocks(all_blocks):
             remaining_rows = remaining_rows[len(chunk):]
             first_chunk    = False
 
-    flush()
     return slides
 
 
@@ -404,7 +421,7 @@ def _add_content_slide(prs, slide_blocks):
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = COL_WHITE
 
-                if ci == 2 and val in ("PASS", "FAIL", "NO SPEC"):
+                if ci == 3 and val in ("PASS", "FAIL", "NO SPEC"):
                     if val == "PASS":
                         cell.fill.fore_color.rgb = COL_PASS_BG
                         _set_text(cell, val, bold=True, fg=COL_PASS_FG,
@@ -445,7 +462,7 @@ def _apply_vertical_merges(tbl, flat_rows):
     Apply vertical cell merges on columns 0-3 based on blank-cell pattern.
     Blank value = consumed by merge above.
     """
-    for ci in range(4):   # cols 0,1,2,3
+    for ci in range(5):   # cols 0,1,2,3,4  (media, mode, spec, result, error)
         ri = 0
         n  = len(flat_rows)
         while ri < n:

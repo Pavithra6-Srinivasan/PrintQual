@@ -64,12 +64,30 @@ class SpecValidator:
 
         return context
     
+    # NORMALISATION MAP — raw data abbreviations → spec file full forms
+    TRAY_ALIASES = {
+        "mpt":           "multipurpose",
+        "multipurpose":  "multipurpose",
+        "mp tray":       "multipurpose",
+        "mp":            "multipurpose",
+        "main":          "main",
+        "adf":           "adf",
+    }
+
+    def _normalise_value(self, value):
+        """
+        Normalise a pivot value before matching against spec.
+        Expands known tray abbreviations and lower-cases everything.
+        """
+        v = str(value).strip().lower()
+        return self.TRAY_ALIASES.get(v, v)
+
     # MATCH SINGLE CELL
     def cell_matches(self, spec_cell, pivot_value):
         """
         Returns True if:
         - spec cell is blank
-        - pivot_value exists inside comma-separated spec cell
+        - pivot_value (after normalisation) exists inside comma-separated spec cell
         """
 
         if pd.isna(spec_cell):
@@ -80,10 +98,13 @@ class SpecValidator:
         if spec_cell == "":
             return True
 
-        # Split comma-separated values
-        options = [x.strip() for x in spec_cell.split(",")]
+        # Normalise the pivot value so abbreviations match full forms
+        normalised_pivot = self._normalise_value(pivot_value)
 
-        return pivot_value in options
+        # Split comma-separated spec options and normalise each
+        options = [self._normalise_value(x) for x in spec_cell.split(",")]
+
+        return normalised_pivot in options
 
     # COLUMN-BY-COLUMN ELIMINATION
     def find_best_spec_row(self, context):

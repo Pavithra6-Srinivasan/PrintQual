@@ -92,12 +92,16 @@ class PivotSummaryEngine:
                                      if "Media Type" in unit_slice.columns \
                                      else pd.DataFrame()
 
-                        overall_result = self._calc_media_type_result(gt_media)
+                        overall_result, accumulated_rate, spec_val =                             self._calc_media_type_result(gt_media, config)
 
                         errors = []
                         if overall_result == "FAIL":
                             errors = self._build_error_list(
-                                gt_media, unit_media, per_k_cols
+                                gt_media, unit_media, per_k_cols, config
+                            )
+                        elif overall_result == "PASS":
+                            errors = self._build_pass_error_list(
+                                gt_media, unit_media, per_k_cols, config
                             )
                         elif overall_result == "NO SPEC":
                             errors = self._build_no_spec_error_list(
@@ -108,7 +112,8 @@ class PivotSummaryEngine:
                             "media_type":     media_type,
                             "overall_result": overall_result,
                             "tray":           tray,
-                            "mode":           mode,   # Print Mode stored here
+                            "mode":           mode,
+                            "spec":           spec_val,
                             "errors":         errors
                         })
 
@@ -164,81 +169,116 @@ class PivotSummaryEngine:
     # MEDIA TYPE OVERALL RESULT
     # ------------------------------------------------------------------
 
-    def _calc_media_type_result(self, gt_media):
+    def _calc_media_type_result(self, gt_media, config):
+        """
+        Compute Tpages-weighted average of total intervention rate across
+        all media names for this (media_type, print_mode) combination,
+        then compare against spec.
+
+        Returns (overall_result, accumulated_rate, spec_val).
+        """
         if gt_media.empty:
-            return "NO DATA"
+            return "NO DATA", None, None
 
         results = gt_media["Result"].astype(str).str.upper().unique()
 
+        # No spec case — fall back to worst result
         if all(r in ("NO SPEC PROVIDED", "SPEC NOT FOUND", "NO DATA")
                for r in results):
-            return "NO SPEC"
+            return "NO SPEC", None, None
 
-        if "FAIL" in results:
-            return "FAIL"
+        total_col = config.total_column_name
 
-        if "PASS" in results:
-            return "PASS"
+        # Get spec limit (same for all rows in this slice)
+        spec_val = None
+        if "Spec Limit" in gt_media.columns:
+            spec_series = pd.to_numeric(
+                gt_media["Spec Limit"], errors="coerce"
+            ).dropna()
+            if not spec_series.empty:
+                spec_val = round(float(spec_series.iloc[0]), 2)
 
-        return results[0]
+        if total_col not in gt_media.columns or spec_val is None:
+            # No total column or no spec — fall back to worst result
+            if "FAIL" in results:
+                return "FAIL", None, spec_val
+            return "PASS", None, spec_val
+
+        # Tpages-weighted average of total rate across all media names
+        tpages = pd.to_numeric(gt_media["Tpages"], errors="coerce").fillna(0)
+        rates  = pd.to_numeric(gt_media[total_col], errors="coerce").fillna(0)
+
+        total_tpages = tpages.sum()
+        if total_tpages <= 0:
+            return "NO DATA", None, spec_val
+
+        accumulated_rate = round(
+            float((rates * tpages).sum() / total_tpages), 2
+        )
+
+        overall_result = "PASS" if accumulated_rate <= spec_val else "FAIL"
+        return overall_result, accumulated_rate, spec_val
 
     # ------------------------------------------------------------------
     # ERROR LIST BUILDER
     # ------------------------------------------------------------------
 
-    def _build_error_list(self, gt_media, unit_media, per_k_cols):
+    def _build_error_list(self, gt_media, unit_media, per_k_cols, config):
         """
-        For each error column, include it only if the Grand Total row's rate
-        for that column exceeds the Spec Limit on that same Grand Total row.
-        No top-N cap — all spec-breaching errors are shown.
-
-        For each included error, list media names whose Grand Total = FAIL
-        AND have a non-zero rate for that error. Under each media name, list
-        units where Result = FAIL AND rate > 0 for that specific error column.
+        For each error column:
+          1. Compute Tpages-weighted average of that error rate across ALL
+             media names in this (media_type, print_mode) combination.
+          2. Include the error only if that accumulated rate exceeds spec.
+          3. Display the accumulated rate (not per-media-name max).
+          4. Under each media name, list units where Result = FAIL and
+             rate > 0 for that specific error column.
         """
         error_candidates = []
+
+        # Get spec limit (same for all rows in this slice)
+        spec_val = None
+        if "Spec Limit" in gt_media.columns:
+            spec_series = pd.to_numeric(
+                gt_media["Spec Limit"], errors="coerce"
+            ).dropna()
+            if not spec_series.empty:
+                spec_val = float(spec_series.iloc[0])
+
+        tpages_all = pd.to_numeric(
+            gt_media["Tpages"], errors="coerce"
+        ).fillna(0) if "Tpages" in gt_media.columns else pd.Series(
+            [0.0] * len(gt_media), index=gt_media.index
+        )
+        total_tpages = tpages_all.sum()
 
         for col in per_k_cols:
             if col not in gt_media.columns:
                 continue
 
-            # Check each Grand Total row: does this error column exceed spec?
-            spec_breach_rows = []
-            for _, row in gt_media.iterrows():
-                result = str(row.get("Result", "")).strip().upper()
-                if result != "FAIL":
-                    continue
+            rates = pd.to_numeric(gt_media[col], errors="coerce").fillna(0)
 
-                rate = pd.to_numeric(row.get(col, 0), errors="coerce")
-                if pd.isna(rate) or rate <= 0:
-                    continue
+            # Tpages-weighted average across all media names
+            if total_tpages > 0:
+                accumulated_rate = float((rates * tpages_all).sum() / total_tpages)
+            else:
+                accumulated_rate = 0.0
 
-                spec_limit = pd.to_numeric(row.get("Spec Limit", None),
-                                           errors="coerce")
-                if pd.isna(spec_limit):
-                    continue   # No spec — skip this error
-
-                if rate > spec_limit:
-                    spec_breach_rows.append(row)
-
-            if not spec_breach_rows:
+            if accumulated_rate <= 0:
                 continue
 
-            # Max rate across all breaching rows
-            max_rate = max(pd.to_numeric(r[col], errors="coerce")
-                          for r in spec_breach_rows)
+            # Only include if accumulated rate exceeds spec
+            if spec_val is not None and accumulated_rate <= spec_val:
+                continue
 
-            # Build failed media list
+            accumulated_rate = round(accumulated_rate, 2)
+
+            # Build failed media list — media names with non-zero rate
             failed_media_list = []
 
             if "Media Name" in gt_media.columns:
-                # All Grand Total rows that are FAIL and have non-zero rate
-                failed_gt = gt_media[
-                    (gt_media["Result"].astype(str).str.upper() == "FAIL") &
-                    (pd.to_numeric(gt_media[col], errors="coerce").fillna(0) > 0)
-                ]
+                nonzero_gt = gt_media[rates > 0]
 
-                for media_name in failed_gt["Media Name"].dropna().unique():
+                for media_name in nonzero_gt["Media Name"].dropna().unique():
                     media_name_str = str(media_name).strip()
                     failed_units   = []
 
@@ -261,22 +301,126 @@ class PivotSummaryEngine:
                                 .unique().tolist()
                             )
 
+                    # Per-media-name rate for display
+                    media_gt_rows = nonzero_gt[
+                        nonzero_gt["Media Name"].astype(str).str.strip()
+                        == media_name_str
+                    ]
+                    media_tpages = pd.to_numeric(
+                        media_gt_rows["Tpages"], errors="coerce"
+                    ).fillna(0) if "Tpages" in media_gt_rows.columns else pd.Series([0.0])
+                    media_rates  = pd.to_numeric(
+                        media_gt_rows[col], errors="coerce"
+                    ).fillna(0)
+                    media_total_tp = media_tpages.sum()
+
+                    if media_total_tp > 0:
+                        media_rate = round(
+                            float((media_rates * media_tpages).sum() / media_total_tp), 2
+                        )
+                    else:
+                        media_rate = round(float(media_rates.max()), 2)
+
                     failed_media_list.append({
                         "media_name": media_name_str,
-                        "units":      failed_units
+                        "units":      failed_units,
+                        "rate":       media_rate
                     })
 
             if failed_media_list:
                 error_name = col.replace("/K", "").strip()
                 error_candidates.append({
                     "error":        error_name,
-                    "rate":         round(float(max_rate), 3),
+                    "rate":         accumulated_rate,
                     "failed_media": failed_media_list
                 })
 
-        # Sort by rate descending — no cap
+        # Sort by accumulated rate descending
         error_candidates.sort(key=lambda x: x["rate"], reverse=True)
         return error_candidates
+
+    # ------------------------------------------------------------------
+    # PASS ERROR LIST BUILDER
+    # ------------------------------------------------------------------
+
+    def _build_pass_error_list(self, gt_media, unit_media, per_k_cols, config):
+        """
+        For PASS combinations: find up to 5 error types where individual
+        media names breach the spec, even though the accumulated rate passed.
+
+        Logic per error column:
+          - Find media names whose individual Grand Total rate > spec
+          - If any found, include this error (accumulated rate shown)
+          - Cap at 5 error types, ranked by accumulated rate descending
+          - No units listed (overall passed)
+        """
+        PASS_TOP_N = 5
+        error_candidates = []
+
+        # Get spec limit
+        spec_val = None
+        if "Spec Limit" in gt_media.columns:
+            spec_series = pd.to_numeric(
+                gt_media["Spec Limit"], errors="coerce"
+            ).dropna()
+            if not spec_series.empty:
+                spec_val = float(spec_series.iloc[0])
+
+        if spec_val is None:
+            return []
+
+        tpages_all = pd.to_numeric(
+            gt_media["Tpages"], errors="coerce"
+        ).fillna(0) if "Tpages" in gt_media.columns else pd.Series(
+            [0.0] * len(gt_media), index=gt_media.index
+        )
+        total_tpages = tpages_all.sum()
+
+        for col in per_k_cols:
+            if col not in gt_media.columns:
+                continue
+
+            rates = pd.to_numeric(gt_media[col], errors="coerce").fillna(0)
+
+            # Find media names that individually breach spec for this error
+            if "Media Name" not in gt_media.columns:
+                continue
+
+            breaching_media = []
+            for _, row in gt_media.iterrows():
+                media_name_str = str(row.get("Media Name", "")).strip()
+                if not media_name_str:
+                    continue
+                media_rate = pd.to_numeric(row.get(col, 0), errors="coerce")
+                if pd.isna(media_rate) or media_rate <= spec_val:
+                    continue
+                # This media name individually breaches spec
+                breaching_media.append({
+                    "media_name": media_name_str,
+                    "units":      [],   # no units for PASS overall
+                    "rate":       round(float(media_rate), 2)
+                })
+
+            if not breaching_media:
+                continue
+
+            # Accumulated rate for this error (for sorting)
+            if total_tpages > 0:
+                accumulated_rate = round(
+                    float((rates * tpages_all).sum() / total_tpages), 2
+                )
+            else:
+                accumulated_rate = round(float(rates.max()), 2)
+
+            error_name = col.replace("/K", "").strip()
+            error_candidates.append({
+                "error":        error_name,
+                "rate":         accumulated_rate,
+                "failed_media": breaching_media
+            })
+
+        error_candidates.sort(key=lambda x: x["rate"], reverse=True)
+        return error_candidates[:PASS_TOP_N]
 
     # ------------------------------------------------------------------
     # NO SPEC ERROR LIST BUILDER
