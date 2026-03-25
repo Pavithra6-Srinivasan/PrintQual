@@ -107,6 +107,61 @@ class UnifiedPivotGenerator:
                 print(f"⚠ Spec validator init failed: {e}")
                 self.spec_validator = None
 
+    def extract_overview_info(self):
+        """
+        Extract overview information from raw data for the overview slide.
+        Returns a dict with keys:
+          group, description, objective, unit_count, test_start, test_end
+        """
+        df = self.raw_data
+ 
+        # Group
+        group = ""
+        if "Group" in df.columns:
+            vals = df["Group"].dropna()
+            group = str(vals.iloc[0]).strip() if not vals.empty else ""
+ 
+        # Description — Program & SKU first value
+        description = ""
+        if "Program & SKU" in df.columns:
+            vals = df["Program & SKU"].dropna()
+            description = str(vals.iloc[0]).strip() if not vals.empty else ""
+ 
+        # Objective — Test Name first value
+        objective = ""
+        if "Test Name" in df.columns:
+            vals = df["Test Name"].dropna()
+            objective = str(vals.iloc[0]).strip() if not vals.empty else ""
+ 
+        # Unit count — unique units
+        unit_count = 0
+        if "Unit" in df.columns:
+            unit_count = df["Unit"].dropna().nunique()
+ 
+        # Test Start / End — from Date column
+        test_start = ""
+        test_end   = ""
+        date_col   = None
+        for col in df.columns:
+            if str(col).strip().lower() == "date":
+                date_col = col
+                break
+ 
+        if date_col:
+            dates = pd.to_datetime(df[date_col], errors="coerce").dropna()
+            if not dates.empty:
+                test_start = dates.min().strftime("%d %b %Y")
+                test_end   = dates.max().strftime("%d %b %Y")
+ 
+        return {
+            "group":       group,
+            "description": description,
+            "objective":   objective,
+            "unit_count":  unit_count,
+            "test_start":  test_start,
+            "test_end":    test_end,
+        }
+
     def create_pivot(self, include_unit=False, include_media_name=False):
         groupby_cols = build_groupby_columns(
             self.processed_data,

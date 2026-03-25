@@ -85,10 +85,14 @@ NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def generate_summary_pptx(output_path, summary_data, printer, variant,
-                           sub_assembly, year, quarter):
+                           sub_assembly, year, quarter, overview=None):
     prs = Presentation()
     prs.slide_width  = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
+
+    # Overview slide first
+    if overview:
+        _add_overview_slide(prs, overview, printer, variant, sub_assembly, year, quarter)
 
     # Build all blocks: each block = (heading_str, flat_rows)
     # grouped by (tray, category)
@@ -307,6 +311,128 @@ def _paginate_blocks(all_blocks):
 
     return slides
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OVERVIEW SLIDE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _add_overview_slide(prs, overview, printer, variant, sub_assembly, year, quarter):
+    """
+    First slide: two-table layout matching the reference image.
+    Top table   — test overview (Group, Description, Objective, etc.)
+    Bottom table — unit list (Unit Number | Serial Number | FW Version)
+                   all blank since unit details are not in raw data.
+    """
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = COL_WHITE
+
+    # ── Slide title ───────────────────────────────────────────────────────────
+    txb = slide.shapes.add_textbox(
+        Inches(MARGIN), Inches(0.12), Inches(TABLE_W), Inches(0.35))
+    tf = txb.text_frame
+    p  = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.LEFT
+    run = p.add_run()
+    run.text           = f"Test Overview  —  Q{quarter} FY{year}"
+    run.font.size      = Pt(PT_HDG + 1)
+    run.font.bold      = True
+    run.font.color.rgb = COL_BLACK
+    run.font.name      = FONT
+
+    # ── Top table: test overview ──────────────────────────────────────────────
+    top_headers = ["Group", "Description", "Objective", "Location", "Unit",
+                   "TARGET Test Life Per Unit", "Test Progress",
+                   "Data Progress", "Test Start", "Test End"]
+    top_widths  = [0.55, 1.30, 1.40, 0.75, 0.45,
+                   0.90, 0.75, 0.75, 0.85, 0.75]  # sum = 8.45 → padded below
+
+    # Scale to TABLE_W
+    scale = TABLE_W / sum(top_widths)
+    top_widths = [w * scale for w in top_widths]
+
+    top_values = [
+        overview.get("group", ""),
+        overview.get("description", ""),
+        overview.get("objective", ""),
+        "",                                          # Location — blank
+        str(overview.get("unit_count", "")),
+        "",                                          # TARGET — blank
+        "",                                          # Test Progress — blank
+        "",                                          # Data Progress — blank
+        overview.get("test_start", ""),
+        overview.get("test_end", ""),
+    ]
+
+    top_tbl_y = 0.55
+    top_tbl_h = 0.56   # header + 1 data row
+
+    tbl1 = slide.shapes.add_table(
+        2, len(top_headers),
+        Inches(TABLE_X), Inches(top_tbl_y),
+        Inches(TABLE_W), Inches(top_tbl_h)
+    ).table
+
+    _clear_table_style(tbl1)
+    for ci, cw in enumerate(top_widths):
+        tbl1.columns[ci].width = Inches(cw)
+
+    for ci, hdr in enumerate(top_headers):
+        cell = tbl1.cell(0, ci)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = COL_BLUE
+        _set_text(cell, hdr, bold=True, fg=COL_WHITE,
+                  size=PT_HEADER, align=PP_ALIGN.CENTER)
+        _set_border(cell)
+
+    for ci, val in enumerate(top_values):
+        cell = tbl1.cell(1, ci)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = COL_WHITE
+        _set_text(cell, val, size=PT_BODY, align=PP_ALIGN.CENTER)
+        _set_border(cell)
+
+    tbl1.rows[0].height = Inches(0.26)
+    tbl1.rows[1].height = Inches(0.30)
+
+    # ── Bottom table: unit details ────────────────────────────────────────────
+    unit_headers = ["Unit Number", "Serial Number", "FW Version"]
+    unit_widths  = [1.20, 1.20, 1.20]
+    unit_count   = overview.get("unit_count", 0) or 0
+    # Show at least 1 blank row; cap at slide space
+    n_unit_rows  = max(1, min(int(unit_count), 12))
+
+    bot_tbl_y = top_tbl_y + top_tbl_h + 0.25
+    bot_tbl_h = min(0.26 + n_unit_rows * 0.25, SLIDE_BOTTOM - bot_tbl_y)
+
+    tbl2 = slide.shapes.add_table(
+        1 + n_unit_rows, len(unit_headers),
+        Inches(TABLE_X), Inches(bot_tbl_y),
+        Inches(sum(unit_widths)), Inches(bot_tbl_h)
+    ).table
+
+    _clear_table_style(tbl2)
+    for ci, cw in enumerate(unit_widths):
+        tbl2.columns[ci].width = Inches(cw)
+
+    for ci, hdr in enumerate(unit_headers):
+        cell = tbl2.cell(0, ci)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = COL_BLUE
+        _set_text(cell, hdr, bold=True, fg=COL_WHITE,
+                  size=PT_HEADER, align=PP_ALIGN.CENTER)
+        _set_border(cell)
+
+    tbl2.rows[0].height = Inches(0.26)
+    for ri in range(n_unit_rows):
+        for ci in range(len(unit_headers)):
+            cell = tbl2.cell(ri + 1, ci)
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = COL_WHITE
+            _set_text(cell, "", size=PT_BODY)
+            _set_border(cell)
+        tbl2.rows[ri + 1].height = Inches(0.25)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TITLE SLIDE

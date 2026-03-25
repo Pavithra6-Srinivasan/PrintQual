@@ -35,7 +35,7 @@ class ReportPipeline:
 
         # 1. Detect test type
         pivot_service = PivotService(raw_file, spec_file)
-        sub_assembly, printer, variant, spec_sheet = pivot_service.detect_test_type()
+        sub_assembly, printer, variant, spec_sheet, overview = pivot_service.detect_test_type()
 
         # 2. Select appropriate categories
         if sub_assembly == "ADF":
@@ -63,16 +63,16 @@ class ReportPipeline:
             quarter = (now.month - 1) // 3 + 1
             print(f"  Fallback: Q{quarter} {year}")
 
-        # 6. Build output paths
-        reports_dir = Path(output_folder) / "reports"
-        reports_dir.mkdir(parents=True, exist_ok=True)
+        # 6. Build output paths — save directly to user-selected folder
+        output_dir = Path(output_folder) / "reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp       = datetime.now().strftime("%Y%m%d_%H%M%S")
         base_name       = f"{printer}_{variant}_{sub_assembly}_Q{quarter}FY{year}"
         excel_filename  = f"{base_name}_Report_{timestamp}.xlsx"
         pptx_filename   = f"{base_name}_Summary_{timestamp}.pptx"
-        excel_path      = reports_dir / excel_filename
-        pptx_path       = reports_dir / pptx_filename
+        excel_path      = output_dir / excel_filename
+        pptx_path       = output_dir / pptx_filename
 
         # 7. Save Excel (pivot sheets only — no summary sheet)
         storage_service = StorageService()
@@ -91,7 +91,8 @@ class ReportPipeline:
                 variant=variant,
                 sub_assembly=sub_assembly,
                 year=year,
-                quarter=quarter
+                quarter=quarter,
+                overview=overview
             )
             # Auto-open the PowerPoint on Windows
             try:
