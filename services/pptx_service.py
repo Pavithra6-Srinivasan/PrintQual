@@ -66,10 +66,10 @@ PT_HDG    = 10     # block heading text
 PT_HEADER = 9      # table column header
 PT_BODY   = 9      # table body
 
-# Row geometry (sized for pt9)
-HDR_H      = 0.22   # table header row height (inches)
-ROW_BASE_H = 0.17   # base height per data row (one line)
-ROW_PAD_H  = 0.02   # top+bottom cell padding
+# Row geometry (sized for pt9, compact)
+HDR_H      = 0.19   # table header row height (inches)
+ROW_BASE_H = 0.15   # base height per data row (one line)
+ROW_PAD_H  = 0.01   # top+bottom cell padding
 CHAR_W_IN  = 0.064  # approximate Calibri-9 char width in inches
 
 # Block heading height (text box above each table)
@@ -90,22 +90,115 @@ def generate_summary_pptx(output_path, summary_data, printer, variant,
     prs.slide_width  = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
 
-    # Overview slide first
+    # Slide 1: Title slide
     if overview:
-        _add_overview_slide(prs, overview, printer, variant, sub_assembly, year, quarter)
+        _add_title_slide_new(prs, overview, printer, variant, year, quarter)
 
-    # Build all blocks: each block = (heading_str, flat_rows)
-    # grouped by (tray, category)
+    # Slide 2: Overview slide
+    if overview:
+        _add_overview_slide(prs, overview, summary_data,
+                            printer, variant, year, quarter)
+
+    # Slides 3+: Content slides (one per tray+category block)
     all_blocks = _build_all_blocks(summary_data)
-
-    # Paginate blocks onto slides
-    slides = _paginate_blocks(all_blocks)
+    slides     = _paginate_blocks(all_blocks)
 
     for slide_blocks in slides:
         _add_content_slide(prs, slide_blocks)
 
+    # Post-process: wire up hyperlinks from overview remarks to content slides
+    _apply_overview_hyperlinks(prs)
+
     prs.save(output_path)
     print(f"✓ Summary PowerPoint saved: {output_path}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HYPERLINK POST-PROCESSING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _apply_overview_hyperlinks(prs):
+    """
+    After all slides are created, wire up hyperlinks in the overview remarks
+    cells. Each remark cell links to the first content slide matching that
+    (tray, category) combination.
+    """
+    if not hasattr(prs, '_overview_hyperlinks'):
+        return
+
+    # Build a map: heading_str → slide index
+    slide_map = {}
+    for idx, slide in enumerate(prs.slides):
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                txt = shape.text_frame.text.strip()
+                if txt and "Input Tray:" in txt and "Category:" in txt:
+                    slide_map[txt] = idx
+
+    for link_info in prs._overview_hyperlinks:
+        cat_name = link_info["cat_name"]
+        tray     = link_info["tray"]
+        table    = link_info["table"]
+        row      = link_info["row"]
+        col      = link_info["col"]
+
+        # Find matching slide
+        target_idx = None
+        for heading, idx in slide_map.items():
+            if f"Category: {cat_name}" in heading:
+                target_idx = idx
+                break
+
+        if target_idx is None:
+            continue
+
+        # Apply hyperlink to the remarks cell using slide reference
+        cell       = table.cell(row, col)
+        tc         = cell._tc
+        tf_el      = tc.find(
+            f"{{{NS}}}txBody"
+        )
+        if tf_el is None:
+            continue
+
+        # Add hyperlink via relationship on the slide
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+        target_slide = prs.slides[target_idx]
+        rId = link_info["slide_obj"].part.relate_to(
+            target_slide.part,
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
+        )
+
+        # Wrap all runs in the cell's first paragraph with a hyperlink
+        NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
+        for para in tf_el.findall(f"{{{NS_A}}}p"):
+            runs = para.findall(f"{{{NS_A}}}r")
+            if not runs:
+                continue
+            # Create hlinkClick on first run's rPr
+            for run_el in runs:
+                rPr = run_el.find(f"{{{NS_A}}}rPr")
+                if rPr is None:
+                    rPr = etree.SubElement(run_el, f"{{{NS_A}}}rPr")
+                    run_el.insert(0, rPr)
+                # Remove existing hlinkClick if any
+                for hl in rPr.findall(
+                    "{http://schemas.openxmlformats.org/drawingml/2006/main}hlinkClick"
+                ):
+                    rPr.remove(hl)
+                hl = etree.SubElement(
+                    rPr,
+                    "{http://schemas.openxmlformats.org/drawingml/2006/main}hlinkClick",
+                    attrib={
+                        "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id": rId,
+                        "action": "ppaction://hlinksldjump"
+                    }
+                )
+                # Style the hyperlink text in blue underline
+                rPr.set("u", "sng")
+                clr_el = etree.SubElement(rPr, f"{{{NS_A}}}solidFill")
+                etree.SubElement(clr_el, f"{{{NS_A}}}srgbClr",
+                                 attrib={"val": "1F4E79"})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -317,122 +410,255 @@ def _paginate_blocks(all_blocks):
 # OVERVIEW SLIDE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _add_overview_slide(prs, overview, printer, variant, sub_assembly, year, quarter):
+def _add_title_slide_new(prs, overview, printer, variant, year, quarter):
     """
-    First slide: two-table layout matching the reference image.
-    Top table   — test overview (Group, Description, Objective, etc.)
-    Bottom table — unit list (Unit Number | Serial Number | FW Version)
-                   all blank since unit details are not in raw data.
+    Slide 1: Clean title slide.
+    Line 1+2: "{printer} {variant}" — large black, centred
+    Line 3:   test name — large black, centred
+    Line 4:   "Q{q}FY{year}" — navy blue, centred
+    Line 5:   "Date : {today}" — navy blue, centred
     """
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.background.fill.solid()
     slide.background.fill.fore_color.rgb = COL_WHITE
 
-    # ── Slide title ───────────────────────────────────────────────────────────
+    def add_text(text, y, h, size, color=COL_BLACK):
+        txb = slide.shapes.add_textbox(
+            Inches(MARGIN), Inches(y), Inches(TABLE_W), Inches(h))
+        tf = txb.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        run = p.add_run()
+        run.text           = text
+        run.font.size      = Pt(size)
+        run.font.color.rgb = color
+        run.font.name      = FONT
+
+    test_name = overview.get("objective", "")
+
+    add_text(f"{printer} {variant}",   0.50, 0.65, 30)
+    add_text(test_name,                1.25, 0.65, 30)
+    add_text(f"Q{quarter}FY{year}",    2.15, 0.40, 16, color=COL_NAVY)
+    add_text(
+        f"Date : {datetime.now().strftime('%d %b %Y')}",
+        2.65, 0.35, 14, color=COL_NAVY
+    )
+
+
+def _add_overview_slide(prs, overview, summary_data, printer, variant, year, quarter):
+    """
+    Slide 2: overview slide.
+    Title: "{printer} {variant} Q{q}FY{year} {test_name}"
+    Left side:
+      Top table  — Unit | Actual Test Life Per Unit | Test Start | Test End
+      Bot table  — Unit Number | Serial Number | FW Version (blank rows)
+    Right side:
+      Table — Category | Result | Remarks
+              Remarks = "{media_type}_{tray}_{mode}_{error}({rate})" per line
+              Each remark hyperlinks to its content slide
+    """
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = COL_WHITE
+
+    test_name = overview.get("objective", "")
+    title_str = f"{printer} {variant} Q{quarter}FY{year} {test_name}"
     txb = slide.shapes.add_textbox(
-        Inches(MARGIN), Inches(0.12), Inches(TABLE_W), Inches(0.35))
-    tf = txb.text_frame
-    p  = tf.paragraphs[0]
+        Inches(MARGIN), Inches(0.05), Inches(TABLE_W), Inches(0.26))
+    tf  = txb.text_frame
+    p   = tf.paragraphs[0]
     p.alignment = PP_ALIGN.LEFT
     run = p.add_run()
-    run.text           = f"Test Overview  —  Q{quarter} FY{year}"
-    run.font.size      = Pt(PT_HDG + 1)
+    run.text           = title_str
+    run.font.size      = Pt(PT_HDG)
     run.font.bold      = True
     run.font.color.rgb = COL_BLACK
     run.font.name      = FONT
 
-    # ── Top table: test overview ──────────────────────────────────────────────
-    top_headers = ["Group", "Description", "Objective", "Location", "Unit",
-                   "TARGET Test Life Per Unit", "Test Progress",
-                   "Data Progress", "Test Start", "Test End"]
-    top_widths  = [0.55, 1.30, 1.40, 0.75, 0.45,
-                   0.90, 0.75, 0.75, 0.85, 0.75]  # sum = 8.45 → padded below
+    left_w  = 3.50
+    right_x = MARGIN + left_w + 0.15
+    right_w = TABLE_W - left_w - 0.15
+    tbl_y   = 0.34
 
-    # Scale to TABLE_W
-    scale = TABLE_W / sum(top_widths)
-    top_widths = [w * scale for w in top_widths]
-
-    top_values = [
-        overview.get("group", ""),
-        overview.get("description", ""),
-        overview.get("objective", ""),
-        "",                                          # Location — blank
-        str(overview.get("unit_count", "")),
-        "",                                          # TARGET — blank
-        "",                                          # Test Progress — blank
-        "",                                          # Data Progress — blank
+    # ── Left top table: unit info ─────────────────────────────────────────────
+    unit_count  = overview.get("unit_count", 0) or 0
+    actual_life = overview.get("actual_life", "")
+    lh_hdrs = ["Unit", "Actual Test Life Per Unit", "Test Start", "Test End"]
+    lh_vals = [
+        str(unit_count),
+        f"{int(actual_life):,}" if actual_life else "",
         overview.get("test_start", ""),
         overview.get("test_end", ""),
     ]
+    lh_w  = [0.50, 1.20, 0.90, 0.90]
+    lt_h  = 0.19 + 0.22   # header + 1 data row
 
-    top_tbl_y = 0.55
-    top_tbl_h = 0.56   # header + 1 data row
-
-    tbl1 = slide.shapes.add_table(
-        2, len(top_headers),
-        Inches(TABLE_X), Inches(top_tbl_y),
-        Inches(TABLE_W), Inches(top_tbl_h)
+    tbl_lt = slide.shapes.add_table(
+        2, 4, Inches(TABLE_X), Inches(tbl_y),
+        Inches(left_w), Inches(lt_h)
     ).table
-
-    _clear_table_style(tbl1)
-    for ci, cw in enumerate(top_widths):
-        tbl1.columns[ci].width = Inches(cw)
-
-    for ci, hdr in enumerate(top_headers):
-        cell = tbl1.cell(0, ci)
-        cell.fill.solid()
-        cell.fill.fore_color.rgb = COL_BLUE
+    _clear_table_style(tbl_lt)
+    for ci, cw in enumerate(lh_w):
+        tbl_lt.columns[ci].width = Inches(cw)
+    for ci, hdr in enumerate(lh_hdrs):
+        cell = tbl_lt.cell(0, ci)
+        cell.fill.solid(); cell.fill.fore_color.rgb = COL_BLUE
         _set_text(cell, hdr, bold=True, fg=COL_WHITE,
                   size=PT_HEADER, align=PP_ALIGN.CENTER)
         _set_border(cell)
-
-    for ci, val in enumerate(top_values):
-        cell = tbl1.cell(1, ci)
-        cell.fill.solid()
-        cell.fill.fore_color.rgb = COL_WHITE
+    for ci, val in enumerate(lh_vals):
+        cell = tbl_lt.cell(1, ci)
+        cell.fill.solid(); cell.fill.fore_color.rgb = COL_WHITE
         _set_text(cell, val, size=PT_BODY, align=PP_ALIGN.CENTER)
         _set_border(cell)
+    tbl_lt.rows[0].height = Inches(0.19)
+    tbl_lt.rows[1].height = Inches(0.22)
 
-    tbl1.rows[0].height = Inches(0.26)
-    tbl1.rows[1].height = Inches(0.30)
+    # ── Left bottom table: unit details (blank) ───────────────────────────────
+    n_unit = max(1, min(int(unit_count), 10))
+    ub_w   = [1.10, 1.20, 1.20]
+    bot_y  = tbl_y + lt_h + 0.07
+    bot_h  = min(0.19 + n_unit * 0.19, SLIDE_BOTTOM - bot_y)
 
-    # ── Bottom table: unit details ────────────────────────────────────────────
-    unit_headers = ["Unit Number", "Serial Number", "FW Version"]
-    unit_widths  = [1.20, 1.20, 1.20]
-    unit_count   = overview.get("unit_count", 0) or 0
-    # Show at least 1 blank row; cap at slide space
-    n_unit_rows  = max(1, min(int(unit_count), 12))
-
-    bot_tbl_y = top_tbl_y + top_tbl_h + 0.25
-    bot_tbl_h = min(0.26 + n_unit_rows * 0.25, SLIDE_BOTTOM - bot_tbl_y)
-
-    tbl2 = slide.shapes.add_table(
-        1 + n_unit_rows, len(unit_headers),
-        Inches(TABLE_X), Inches(bot_tbl_y),
-        Inches(sum(unit_widths)), Inches(bot_tbl_h)
+    tbl_lb = slide.shapes.add_table(
+        1 + n_unit, 3,
+        Inches(TABLE_X), Inches(bot_y),
+        Inches(sum(ub_w)), Inches(bot_h)
     ).table
-
-    _clear_table_style(tbl2)
-    for ci, cw in enumerate(unit_widths):
-        tbl2.columns[ci].width = Inches(cw)
-
-    for ci, hdr in enumerate(unit_headers):
-        cell = tbl2.cell(0, ci)
-        cell.fill.solid()
-        cell.fill.fore_color.rgb = COL_BLUE
+    _clear_table_style(tbl_lb)
+    for ci, cw in enumerate(ub_w):
+        tbl_lb.columns[ci].width = Inches(cw)
+    for ci, hdr in enumerate(["Unit Number", "Serial Number", "FW Version"]):
+        cell = tbl_lb.cell(0, ci)
+        cell.fill.solid(); cell.fill.fore_color.rgb = COL_BLUE
         _set_text(cell, hdr, bold=True, fg=COL_WHITE,
                   size=PT_HEADER, align=PP_ALIGN.CENTER)
         _set_border(cell)
-
-    tbl2.rows[0].height = Inches(0.26)
-    for ri in range(n_unit_rows):
-        for ci in range(len(unit_headers)):
-            cell = tbl2.cell(ri + 1, ci)
-            cell.fill.solid()
-            cell.fill.fore_color.rgb = COL_WHITE
+    tbl_lb.rows[0].height = Inches(0.19)
+    for ri in range(n_unit):
+        for ci in range(3):
+            cell = tbl_lb.cell(ri + 1, ci)
+            cell.fill.solid(); cell.fill.fore_color.rgb = COL_WHITE
             _set_text(cell, "", size=PT_BODY)
             _set_border(cell)
-        tbl2.rows[ri + 1].height = Inches(0.25)
+        tbl_lb.rows[ri + 1].height = Inches(0.19)
+
+    # ── Right table: Category | Result | Remarks ──────────────────────────────
+    cat_results = _build_category_results(summary_data)
+    rem_w       = right_w - 0.90 - 0.55
+    rh_w        = [0.90, 0.55, rem_w]
+    right_h     = min(0.19 + len(cat_results) * 0.22, SLIDE_BOTTOM - tbl_y)
+
+    tbl_r = slide.shapes.add_table(
+        1 + len(cat_results), 3,
+        Inches(right_x), Inches(tbl_y),
+        Inches(right_w), Inches(right_h)
+    ).table
+    _clear_table_style(tbl_r)
+    for ci, cw in enumerate(rh_w):
+        tbl_r.columns[ci].width = Inches(cw)
+    for ci, hdr in enumerate(["Category", "Result", "Remarks"]):
+        cell = tbl_r.cell(0, ci)
+        cell.fill.solid(); cell.fill.fore_color.rgb = COL_BLUE
+        _set_text(cell, hdr, bold=True, fg=COL_WHITE,
+                  size=PT_HEADER, align=PP_ALIGN.CENTER)
+        _set_border(cell)
+    tbl_r.rows[0].height = Inches(0.19)
+
+    if not hasattr(prs, '_overview_hyperlinks'):
+        prs._overview_hyperlinks = []
+
+    for ri, row_info in enumerate(cat_results):
+        tr       = ri + 1
+        cat_name = row_info["category"]
+        result   = row_info["result"]
+        remarks  = row_info["remarks"]   # list of strings
+
+        # Category cell
+        cell = tbl_r.cell(tr, 0)
+        cell.fill.solid(); cell.fill.fore_color.rgb = COL_WHITE
+        _set_text(cell, cat_name, size=PT_BODY)
+        _set_border(cell)
+
+        # Result cell — coloured
+        cell = tbl_r.cell(tr, 1)
+        cell.fill.solid()
+        if result == "PASS":
+            cell.fill.fore_color.rgb = COL_PASS_BG
+            _set_text(cell, result, bold=True, fg=COL_PASS_FG,
+                      size=PT_BODY, align=PP_ALIGN.CENTER)
+        elif result == "FAIL":
+            cell.fill.fore_color.rgb = COL_FAIL_BG
+            _set_text(cell, result, bold=True, fg=COL_FAIL_FG,
+                      size=PT_BODY, align=PP_ALIGN.CENTER)
+        else:
+            cell.fill.fore_color.rgb = RGBColor(0xD9, 0xD9, 0xD9)
+            _set_text(cell, result, bold=True,
+                      fg=RGBColor(0x40, 0x40, 0x40),
+                      size=PT_BODY, align=PP_ALIGN.CENTER)
+        _set_border(cell)
+
+        # Remarks cell — one remark per line, hyperlink if FAIL
+        cell = tbl_r.cell(tr, 2)
+        cell.fill.solid(); cell.fill.fore_color.rgb = COL_WHITE
+        remarks_text = "\n".join(remarks) if remarks else ""
+        _set_text(cell, remarks_text, size=PT_BODY)
+        _set_border(cell)
+
+        if remarks:
+            prs._overview_hyperlinks.append({
+                "slide_obj": slide,
+                "table":     tbl_r,
+                "row":       tr,
+                "col":       2,
+                "cat_name":  cat_name,
+                "tray":      row_info.get("tray", ""),
+            })
+
+        # Compact row height based on number of remark lines
+        n_lines = max(1, len(remarks))
+        tbl_r.rows[tr].height = Inches(max(0.19, n_lines * 0.16))
+
+
+def _build_category_results(summary_data):
+    """
+    One summary row per unique category across all trays/modes.
+    Result = FAIL if any combination fails, else PASS.
+    Remarks = list of '{media_type}_{tray}_{mode}_{error}({rate})'
+              only for FAIL combinations.
+    """
+    cat_map = {}
+
+    for cat in summary_data["categories"]:
+        cat_name = cat["category"]
+        if cat_name not in cat_map:
+            cat_map[cat_name] = {"result": "PASS", "remarks": [], "tray": ""}
+
+        for m in cat["media_summaries"]:
+            tray   = str(m.get("tray", ""))
+            mode   = str(m.get("mode", ""))
+            mt     = m.get("media_type", "")
+            result = m.get("overall_result", "")
+            errors = m.get("errors", [])
+
+            if not cat_map[cat_name]["tray"]:
+                cat_map[cat_name]["tray"] = tray
+
+            if result == "FAIL":
+                cat_map[cat_name]["result"] = "FAIL"
+                for err in errors:
+                    remark = (f"{mt}_{tray}_{mode}_"
+                              f"{err['error']}({err['rate']:.2f}/K)")
+                    if remark not in cat_map[cat_name]["remarks"]:
+                        cat_map[cat_name]["remarks"].append(remark)
+
+    return [
+        {"category": k, "result": v["result"],
+         "remarks": v["remarks"], "tray": v["tray"]}
+        for k, v in cat_map.items()
+    ]
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TITLE SLIDE
