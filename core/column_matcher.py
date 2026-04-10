@@ -87,7 +87,7 @@ def prepare_error_columns(raw_data, config):
 
 def find_fuzzy_column_match(df, target_col):
     """
-    Find a column that closely matches the target name.
+    Find a column that exactly matches the target name (case-insensitive).
     """
     target_normalized = target_col.lower().replace('_', ' ').replace('-', ' ').strip()
 
@@ -96,9 +96,5 @@ def find_fuzzy_column_match(df, target_col):
 
         if target_normalized == col_normalized:
             return col
-
-        if len(target_normalized) > 5:
-            if target_normalized in col_normalized or col_normalized in target_normalized:
-                return col
 
     return None

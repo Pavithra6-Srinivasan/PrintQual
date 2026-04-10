@@ -21,6 +21,30 @@ def detect_spec_sheet(raw_df):
         print("✓ Spec sheet detected: Moreto")
         return 'Moreto'
 
+    if values.str.contains('lebi').any():
+        print("✓ Spec sheet detected: LEBI")
+        return 'LEBI'
+
+    if values.str.contains('narita').any():
+        print("✓ Spec sheet detected: Narita")
+        return 'Narita'
+
+    if values.str.contains('poseidon').any():
+        print("✓ Spec sheet detected: Poseidon")
+        return 'Poseidon'
+
+    if values.str.contains('ruby').any() or values.str.contains('topaz').any():
+        print("✓ Spec sheet detected: Ruby Topaz")
+        return 'Ruby Topaz'
+
+    if values.str.contains('sayan').any():
+        print("✓ Spec sheet detected: Sayan")
+        return 'Sayan'
+
+    if values.str.contains('victoria').any():
+        print("✓ Spec sheet detected: Victoria")
+        return 'Victoria'
+
     print("⚠ Could not detect spec sheet from Program & SKU")
     return None
 

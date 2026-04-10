@@ -1,8 +1,10 @@
 """
-pivot_generator.py - WITH EXCEL TABLE + SLICER SUPPORT
+pivot_generator.py - OPTIMIZED VERSION
 
-Creates combined Media+Unit table formatted as Excel Table
-This enables Slicer functionality in Excel
+Key optimizations:
+1. Cached raw data reading (reads file only once)
+2. Removed repetitive debug prints
+3. Reuses spec validator across categories
 """
 
 import pandas as pd
@@ -13,11 +15,14 @@ from core.column_matcher import standardize_column_names, prepare_error_columns
 from core.spec_detector import detect_spec_sheet
 from core.pivot_utils import build_groupby_columns, calculate_per_k_rates, calculate_total_rate, apply_spec_validation
 
+# OPTIMIZATION 1: Cache raw data at module level
+_RAW_DATA_CACHE = {}
+
 class UnifiedPivotGenerator:
-    """Generates pivot tables with Excel Table support for slicers."""
+    """Generates pivot tables - OPTIMIZED."""
 
     COLUMN_ALIASES = {
-        'Test Name': ['Test Name', 'TestName', 'Test_Name', 'Test name'],
+        'Test Name': ['Test Name', 'TestName', 'Test_Name', 'Test name', 'Test mode'],
         'Program & SKU': ['Program & SKU', 'Program&SKU', 'Program_SKU'],
         'Test mode': ['Test mode', 'Test Mode'],
         'Input Tray': ['Input_Tray', 'Tray', 'Input Tray'],
@@ -31,14 +36,29 @@ class UnifiedPivotGenerator:
         'Print Quality': ['Print Quality', 'Color/Quality']
     }
     
-    def __init__(self, raw_data_file, test_config, spec_file_path=None):
-        header_row = find_header_row(raw_data_file)
-        self.raw_data = pd.read_excel(raw_data_file, header=header_row)
+    # OPTIMIZATION 2: Shared spec validator cache
+    _spec_validator_cache = {}
+    
+    def __init__(self, raw_data_file, test_config, spec_file_path=None, raw_data=None):
+        """
+        Args:
+            raw_data: Optional pre-loaded DataFrame to avoid re-reading file
+        """
         self.config = test_config
         self.spec_file_path = spec_file_path
         self.spec_validator = None
         
-        self.raw_data = standardize_column_names(self.raw_data, self.COLUMN_ALIASES)
+        # OPTIMIZATION 1: Use cached or provided raw data
+        if raw_data is not None:
+            self.raw_data = raw_data
+        elif raw_data_file in _RAW_DATA_CACHE:
+            self.raw_data = _RAW_DATA_CACHE[raw_data_file]
+        else:
+            header_row = find_header_row(raw_data_file)
+            self.raw_data = pd.read_excel(raw_data_file, header=header_row)
+            self.raw_data = standardize_column_names(self.raw_data, self.COLUMN_ALIASES)
+            _RAW_DATA_CACHE[raw_data_file] = self.raw_data
+        
         self.spec_sheet = detect_spec_sheet(self.raw_data)
         
         result = prepare_error_columns(self.raw_data, self.config)
@@ -51,6 +71,40 @@ class UnifiedPivotGenerator:
 
         self.numeric_columns = ['Tpages'] + self.error_output_columns
         
+        # OPTIMIZATION 3: Only detect once (on first call)
+        if not hasattr(UnifiedPivotGenerator, '_detection_done'):
+            self._detect_printer_info()
+            UnifiedPivotGenerator._detection_done = True
+            UnifiedPivotGenerator._cached_printer = self.detected_main_printer
+            UnifiedPivotGenerator._cached_variant = self.detected_variant
+            UnifiedPivotGenerator._cached_sub_assembly = self.sub_assembly
+        else:
+            self.detected_main_printer = UnifiedPivotGenerator._cached_printer
+            self.detected_variant = UnifiedPivotGenerator._cached_variant
+            self.sub_assembly = UnifiedPivotGenerator._cached_sub_assembly
+
+        # OPTIMIZATION 4: Reuse spec validator if same parameters
+        if spec_file_path and self.spec_sheet:
+            cache_key = (spec_file_path, self.spec_sheet, self.config.name, 
+                        self.detected_variant, self.sub_assembly)
+            
+            if cache_key in self._spec_validator_cache:
+                self.spec_validator = self._spec_validator_cache[cache_key]
+            else:
+                try:
+                    self.spec_validator = SpecValidator(
+                        spec_file_path=spec_file_path,
+                        sheet_name=self.spec_sheet,
+                        spec_category=self.config.name,
+                        product=self.detected_variant,
+                        sub_assembly=self.sub_assembly
+                    )
+                    self._spec_validator_cache[cache_key] = self.spec_validator
+                except Exception as e:
+                    pass  # Silently fail, validator stays None
+
+    def _detect_printer_info(self):
+        """Extract printer metadata (only called once)."""
         self.detected_main_printer = None
         self.detected_variant = None
         self.sub_assembly = None
@@ -59,7 +113,7 @@ class UnifiedPivotGenerator:
             first_test = str(self.raw_data['Test Name'].dropna().iloc[0]).lower()
             if "adf" in first_test:
                 self.sub_assembly = "ADF"
-            elif any(keyword in first_test for keyword in ["paperpath", "cuslt", "life test"]):
+            elif any(keyword in first_test for keyword in ["paperpath", "cuslt", "life test", "ppth", "pppl"]):
                 self.sub_assembly = "Paperpath"
 
         if not self.sub_assembly and 'Program & SKU' in self.raw_data.columns:
@@ -80,86 +134,97 @@ class UnifiedPivotGenerator:
                 
                 self.detected_main_printer = raw_sku.split()[0]
                 
-                if "hi" in raw_lower:
+                if "ruby" in raw_lower:
+                    self.detected_variant = "Ruby"
+                elif "topaz" in raw_lower:
+                    self.detected_variant = "Topaz"
+                elif "prem plus" in raw_lower:
+                    self.detected_variant = "Prem Plus"
+                elif "hi" in raw_lower:
                     self.detected_variant = "Hi"
                 elif "base" in raw_lower:
                     self.detected_variant = "Base"
                 elif "sf" in raw_lower:
                     self.detected_variant = "SF"
+                elif "plus" in raw_lower:
+                    self.detected_variant = "Plus"
+                elif "lite" in raw_lower:
+                    self.detected_variant = "Lite"
                 else:
                     self.detected_variant = "Standard"
-                
-                print(f"[DETECTED] Main Printer: {self.detected_main_printer}")
-                print(f"[DETECTED] Variant: {self.detected_variant}")
-                print(f"[DETECTED] Sub Assembly: {self.sub_assembly}")
-
-        if spec_file_path and self.spec_sheet:
-            try:
-                self.spec_validator = SpecValidator(
-                    spec_file_path=spec_file_path,
-                    sheet_name=self.spec_sheet,
-                    spec_category=self.config.name,
-                    product=self.detected_variant,
-                    sub_assembly=self.sub_assembly
-                )
-                print(f"✓ Spec validator initialized using sheet: {self.spec_sheet}")
-            except Exception as e:
-                print(f"⚠ Spec validator init failed: {e}")
-                self.spec_validator = None
 
     def extract_overview_info(self):
-        """
-        Extract overview information from raw data for the overview slide.
-        Returns a dict with keys:
-          group, description, objective, unit_count, test_start, test_end
-        """
+        """Extract overview information from raw data."""
         df = self.raw_data
- 
-        # Group
+
         group = ""
         if "Group" in df.columns:
             vals = df["Group"].dropna()
             group = str(vals.iloc[0]).strip() if not vals.empty else ""
- 
-        # Description — Program & SKU first value
+
         description = ""
         if "Program & SKU" in df.columns:
             vals = df["Program & SKU"].dropna()
             description = str(vals.iloc[0]).strip() if not vals.empty else ""
- 
-        # Objective — Test Name first value
+
         objective = ""
         if "Test Name" in df.columns:
             vals = df["Test Name"].dropna()
             objective = str(vals.iloc[0]).strip() if not vals.empty else ""
- 
-        # Unit count — unique units
+
+        unit_names = []
         unit_count = 0
+
         if "Unit" in df.columns:
-            unit_count = df["Unit"].dropna().nunique()
- 
-        # Test Start / End — from Date column
+            units = (
+                df["Unit"]
+                .dropna()
+                .astype(str)
+                .str.strip()
+            )
+            units = units[~units.str.lower().isin(["grand total", "nan"])]
+            unit_names = sorted(units.unique())
+            unit_count = len(unit_names)
+
         test_start = ""
-        test_end   = ""
-        date_col   = None
+        test_end = ""
+
+        date_col = None
         for col in df.columns:
             if str(col).strip().lower() == "date":
                 date_col = col
                 break
- 
+
         if date_col:
             dates = pd.to_datetime(df[date_col], errors="coerce").dropna()
             if not dates.empty:
                 test_start = dates.min().strftime("%d %b %Y")
-                test_end   = dates.max().strftime("%d %b %Y")
- 
+                test_end = dates.max().strftime("%d %b %Y")
+
+        test_condition = ""
+        if "Test Condition" in df.columns:
+            vals = df["Test Condition"].dropna().astype(str).str.strip()
+            if not vals.empty:
+                test_condition = "Ambient" if vals.str.lower().eq("ambient").all() else "Climatic"
+
+        project_phase = ""
+        for col in df.columns:
+            if str(col).strip().lower() == "project phase":
+                vals = df[col].dropna().astype(str).str.strip()
+                if not vals.empty:
+                    project_phase = vals.iloc[0]
+                break
+
         return {
-            "group":       group,
+            "group": group,
             "description": description,
-            "objective":   objective,
-            "unit_count":  unit_count,
-            "test_start":  test_start,
-            "test_end":    test_end,
+            "objective": objective,
+            "unit_count": unit_count,
+            "unit_names": unit_names,
+            "test_start": test_start,
+            "test_end": test_end,
+            "test_condition": test_condition,
+            "project_phase": project_phase,
         }
 
     def create_pivot(self, include_unit=False, include_media_name=False):
@@ -194,16 +259,10 @@ class UnifiedPivotGenerator:
             pivot['Result'] = pivot['Result'].astype(str).str.upper()
 
         pivot = pivot[final_cols]
-
         return pivot, groupby_cols
     
     def create_combined_pivot(self):
-        """
-        Create COMBINED pivot with both Media Name AND Unit.
-        This replaces the separate media and unit pivots.
-        Returns DataFrame suitable for Excel Table + Slicer.
-        """
-        # Create pivot with BOTH media name and unit
+        """Create COMBINED pivot with both Media Name AND Unit."""
         groupby_cols = build_groupby_columns(
             self.processed_data,
             self.config,
@@ -236,60 +295,62 @@ class UnifiedPivotGenerator:
 
         pivot = pivot[final_cols]
         
-        # Add grand totals
-        if len(groupby_cols) > 2:
-            # Group by all except Unit for grand totals
+        if 'Unit' in groupby_cols:
             grand_total_groupby = [col for col in groupby_cols if col != 'Unit']
             pivot = self.add_grand_totals(pivot, grand_total_groupby)
 
         return pivot
     
     def add_grand_totals(self, df, groupby_cols):
-        """Add grand total rows for each combination of grouping columns."""
-        result_rows = []
-        combinations = df[groupby_cols].drop_duplicates().reset_index(drop=True)
-        
-        per_k_cols = [col for col in df.columns if col.endswith('/K') and col != self.config.total_column_name]
-
-        # FIX 1: Always write Grand Total into the Unit column
+        """Add grand total rows - OPTIMIZED with vectorized operations."""
         grand_total_col = 'Unit'
         
         if grand_total_col not in df.columns:
             return df
 
+        result_rows = []
+        combinations = df[groupby_cols].drop_duplicates()
+        
+        per_k_cols = [col for col in df.columns 
+                     if col.endswith('/K') and col != self.config.total_column_name]
+
         for _, combo in combinations.iterrows():
-            mask = True
+            # Vectorized mask creation — handle NaN values (NaN == NaN is False in pandas)
+            mask = pd.Series(True, index=df.index)
             for col in groupby_cols:
-                mask = mask & (df[col] == combo[col])
+                val = combo[col]
+                if pd.isna(val):
+                    mask &= df[col].isna()
+                else:
+                    mask &= (df[col] == val)
             
-            subset = df[mask].copy()
+            subset = df[mask]
             
-            # FIX 2: Skip only if truly empty, not single-unit groups
             if len(subset) == 0:
                 continue
             
             result_rows.append(subset)
             
+            # Create grand total row
             grand_total = pd.DataFrame(columns=df.columns, index=[0])
             for col in groupby_cols:
                 grand_total[col] = combo[col]
             
             grand_total[grand_total_col] = 'Grand Total'
-            
             total_tpages = subset['Tpages'].sum()
             grand_total['Tpages'] = total_tpages
             
-            for col in per_k_cols:
-                if total_tpages > 0:
+            if total_tpages > 0:
+                # Vectorized calculation for all per-K columns
+                for col in per_k_cols:
                     weighted_sum = (subset[col] * subset['Tpages'] / 1000).sum()
                     grand_total[col] = round((weighted_sum / total_tpages) * 1000, 3)
-                else:
-                    grand_total[col] = 0.0
-            
-            if total_tpages > 0:
+                
                 weighted_sum = (subset[self.config.total_column_name] * subset['Tpages'] / 1000).sum()
                 grand_total[self.config.total_column_name] = round((weighted_sum / total_tpages) * 1000, 3)
             else:
+                for col in per_k_cols:
+                    grand_total[col] = 0.0
                 grand_total[self.config.total_column_name] = 0.0
             
             if self.spec_validator:
@@ -313,3 +374,11 @@ class UnifiedPivotGenerator:
             result['Result'] = result['Result'].astype(str).str.upper()
         
         return result
+
+    @staticmethod
+    def clear_cache():
+        """Clear all caches (call at end of processing)."""
+        _RAW_DATA_CACHE.clear()
+        UnifiedPivotGenerator._spec_validator_cache.clear()
+        if hasattr(UnifiedPivotGenerator, '_detection_done'):
+            delattr(UnifiedPivotGenerator, '_detection_done')

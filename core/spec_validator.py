@@ -60,7 +60,12 @@ class SpecValidator:
 
         for col in mapping:
             if col in pivot_row and pd.notna(pivot_row[col]):
-                context[col] = str(pivot_row[col]).strip().lower()
+                val = str(pivot_row[col]).strip()
+                if col == "Test Condition":
+                    # Raw data has specific climatic values (e.g. "15C20RH")
+                    # Spec file uses "Climatic" for all non-ambient — normalize accordingly
+                    val = "Ambient" if val.lower() == "ambient" else "Climatic"
+                context[col] = val.lower()
 
         return context
     
@@ -104,11 +109,19 @@ class SpecValidator:
         # Split comma-separated spec options and normalise each
         options = [self._normalise_value(x) for x in spec_cell.split(",")]
 
-        return normalised_pivot in options
+        # Exact match
+        if normalised_pivot in options:
+            return True
+
+        # Word-level match — e.g. variant "hi" matches product entry "marconi hi"
+        for opt in options:
+            if normalised_pivot in opt.split():
+                return True
+
+        return False
 
     # COLUMN-BY-COLUMN ELIMINATION
     def find_best_spec_row(self, context):
-
         df = self.spec_df.copy()
 
         priority_order = [
@@ -123,31 +136,54 @@ class SpecValidator:
         ]
 
         for col in priority_order:
-
             if col not in df.columns:
                 continue
-
             if col not in context:
                 continue
 
             pivot_value = context[col]
 
-            matched_rows = df[
-                df[col].apply(lambda x: self.cell_matches(x, pivot_value))
-            ]
+            def is_blank(v):
+                return pd.isna(v) or str(v).strip() == ""
 
-            # Only reduce if we found matches
-            if not matched_rows.empty:
-                df = matched_rows.reset_index(drop=True)
+            def is_explicit_match(v):
+                return not is_blank(v) and self.cell_matches(v, pivot_value)
 
-            # If only one row remains → stop early
+            explicit_rows = df[df[col].apply(is_explicit_match)]
+            wildcard_rows = df[df[col].apply(is_blank)]
+
+            if not explicit_rows.empty:
+                df = explicit_rows.reset_index(drop=True)
+            elif not wildcard_rows.empty:
+                df = wildcard_rows.reset_index(drop=True)
+
             if len(df) == 1:
                 break
 
         if df.empty:
             return None
 
+        if len(df) > 1:
+            df = self._prefer_general_row(df, priority_order)
+
         return df.iloc[0]
+
+    # COLUMN-BY-COLUMN ELIMINATION (continued)
+    def _prefer_general_row(self, df, priority_order):
+        """When multiple rows remain after context exhaustion, prefer the most
+        specific spec row (most non-blank constraints) — i.e. the row that
+        most precisely describes a test condition.  If two rows tie on
+        specificity, fall back to the minimum spec value (most conservative)."""
+        def specificity(row):
+            return sum(
+                1 for col in priority_order
+                if col in df.columns
+                and not (pd.isna(row.get(col)) or str(row.get(col)).strip() == "")
+            )
+        df = df.copy()
+        df["_spec_score"] = df.apply(specificity, axis=1)
+        max_score = df["_spec_score"].max()
+        return df[df["_spec_score"] == max_score].drop("_spec_score", axis=1).reset_index(drop=True)
 
     # FINAL EVALUATION
     def evaluate(self, pivot_row, total_per_k_col):

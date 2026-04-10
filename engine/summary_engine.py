@@ -64,58 +64,95 @@ class PivotSummaryEngine:
             unit_df        = self._get_unit_rows(combined_df)
             per_k_cols     = self._get_error_per_k_cols(combined_df, config)
 
-            # Group by tray only — mode becomes a data column
-            tray_col  = self._find_tray_col(combined_df)
-            trays     = grand_total_df[tray_col].dropna().unique() \
-                        if tray_col and not grand_total_df.empty else [None]
+            tray_col = self._find_tray_col(combined_df)
+
+            # Group by Test Condition first (if column present)
+            has_tc = (
+                "Test Condition" in grand_total_df.columns
+                and not grand_total_df.empty
+            )
+            test_conditions = (
+                grand_total_df["Test Condition"].dropna().unique()
+                if has_tc else [None]
+            )
 
             media_summaries = []
 
-            for tray in sorted(trays, key=str):
-                gt_tray   = self._filter_by_tray(grand_total_df, tray)
-                unit_tray = self._filter_by_tray(unit_df, tray)
+            for tc in sorted(test_conditions, key=str):
+                gt_tc   = self._filter_by_test_condition(grand_total_df, tc) if has_tc else grand_total_df
+                unit_tc = self._filter_by_test_condition(unit_df, tc)        if has_tc else unit_df
 
-                # Get all print modes present for this tray
-                modes = gt_tray["Print Mode"].dropna().unique() \
-                        if "Print Mode" in gt_tray.columns else [None]
+                trays = gt_tc[tray_col].dropna().unique() \
+                        if tray_col and not gt_tc.empty else [None]
 
-                for mode in sorted(modes, key=str):
-                    gt_slice   = self._filter_by_mode(gt_tray, mode)
-                    unit_slice = self._filter_by_mode(unit_tray, mode)
+                for tray in sorted(trays, key=str):
+                    gt_tray   = self._filter_by_tray(gt_tc, tray)
+                    unit_tray = self._filter_by_tray(unit_tc, tray)
 
-                    media_types = gt_slice["Media Type"].dropna().unique() \
-                                  if "Media Type" in gt_slice.columns else []
+                    # Get all print modes present for this tray
+                    modes = gt_tray["Print Mode"].dropna().unique() \
+                            if "Print Mode" in gt_tray.columns else [None]
 
-                    for media_type in sorted(media_types, key=str):
-                        gt_media   = gt_slice[gt_slice["Media Type"] == media_type]
-                        unit_media = unit_slice[unit_slice["Media Type"] == media_type] \
-                                     if "Media Type" in unit_slice.columns \
-                                     else pd.DataFrame()
+                    for mode in sorted(modes, key=str):
+                        gt_slice   = self._filter_by_mode(gt_tray, mode)
+                        unit_slice = self._filter_by_mode(unit_tray, mode)
 
-                        overall_result, accumulated_rate, spec_val =                             self._calc_media_type_result(gt_media, config)
+                        media_types = gt_slice["Media Type"].dropna().unique() \
+                                      if "Media Type" in gt_slice.columns else []
 
-                        errors = []
-                        if overall_result == "FAIL":
-                            errors = self._build_error_list(
-                                gt_media, unit_media, per_k_cols, config
+                        for media_type in sorted(media_types, key=str):
+                            gt_mt      = gt_slice[gt_slice["Media Type"] == media_type]
+                            unit_mt    = unit_slice[unit_slice["Media Type"] == media_type] \
+                                         if "Media Type" in unit_slice.columns \
+                                         else pd.DataFrame()
+
+                            # Group by Media Cat when present
+                            has_mc = (
+                                "Media Cat" in gt_mt.columns
+                                and gt_mt["Media Cat"].notna().any()
                             )
-                        elif overall_result == "PASS":
-                            errors = self._build_pass_error_list(
-                                gt_media, unit_media, per_k_cols, config
-                            )
-                        elif overall_result == "NO SPEC":
-                            errors = self._build_no_spec_error_list(
-                                gt_media, per_k_cols
+                            media_cats = (
+                                gt_mt["Media Cat"].dropna().unique()
+                                if has_mc else [None]
                             )
 
-                        media_summaries.append({
-                            "media_type":     media_type,
-                            "overall_result": overall_result,
-                            "tray":           tray,
-                            "mode":           mode,
-                            "spec":           spec_val,
-                            "errors":         errors
-                        })
+                            for media_cat in sorted(media_cats, key=lambda x: str(x) if x is not None else ""):
+                                if has_mc and media_cat is not None:
+                                    gt_media   = gt_mt[gt_mt["Media Cat"] == media_cat]
+                                    unit_media = unit_mt[unit_mt["Media Cat"] == media_cat] \
+                                                 if "Media Cat" in unit_mt.columns \
+                                                 else unit_mt
+                                else:
+                                    gt_media   = gt_mt
+                                    unit_media = unit_mt
+
+                                overall_result, accumulated_rate, spec_val = \
+                                    self._calc_media_type_result(gt_media, config)
+
+                                errors = []
+                                if overall_result == "FAIL":
+                                    errors = self._build_error_list(
+                                        gt_media, unit_media, per_k_cols, config
+                                    )
+                                elif overall_result == "PASS":
+                                    errors = self._build_pass_error_list(
+                                        gt_media, unit_media, per_k_cols, config
+                                    )
+                                elif overall_result == "NO SPEC":
+                                    errors = self._build_no_spec_error_list(
+                                        gt_media, per_k_cols
+                                    )
+
+                                media_summaries.append({
+                                    "media_type":     media_type,
+                                    "media_cat":      str(media_cat).strip() if media_cat is not None else "",
+                                    "overall_result": overall_result,
+                                    "tray":           tray,
+                                    "mode":           mode,
+                                    "spec":           spec_val,
+                                    "errors":         errors,
+                                    "test_condition": str(tc).strip() if tc is not None else "",
+                                })
 
             categories.append({
                 "category":        category_name,
@@ -143,6 +180,13 @@ class PivotSummaryEngine:
     # ------------------------------------------------------------------
     # FILTERING
     # ------------------------------------------------------------------
+
+    def _filter_by_test_condition(self, df, tc):
+        if df.empty:
+            return df
+        if "Test Condition" in df.columns and tc is not None:
+            return df[df["Test Condition"] == tc].reset_index(drop=True)
+        return df.copy()
 
     def _filter_by_tray(self, df, tray):
         if df.empty:

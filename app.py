@@ -12,19 +12,20 @@ import threading
 from ui_builder import create_widgets
 from services.ai_service import AIService
 from services.report_pipeline import ReportPipeline
+from utils.paths import default_spec_path
 
 class PivotGeneratorApp:
     """Desktop GUI with modern chat interface."""
-    
+
     def __init__(self, root):
         self.root = root
         self.root.title("Life Test Data Analysis")
         self.root.geometry("900x700")  # Taller window
-        
+
         self.raw_data_file = tk.StringVar()
-        self.output_folder = tk.StringVar(value=str(Path.cwd()))
-        
-        self.spec_file_path = Path.cwd() / "spec.xlsx"
+        self.output_folder = tk.StringVar(value="")
+
+        self.spec_file_path = default_spec_path()
         
         create_widgets(self)
 

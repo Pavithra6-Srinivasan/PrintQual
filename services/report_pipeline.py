@@ -46,6 +46,49 @@ class ReportPipeline:
         # 3. Generate all pivots
         all_pivots = pivot_service.generate_all_pivots(categories)
 
+        # Extract all unit names from raw pivot data
+        try:
+            units = set()
+
+            for cat in all_pivots.values():
+                df = cat["combined"]
+
+                if "Unit" in df.columns:
+                    unit_vals = df["Unit"].astype(str).str.strip()
+
+                    unit_vals = unit_vals[
+                        unit_vals.str.lower() != "grand total"
+                    ]
+
+                    units.update(unit_vals.tolist())
+
+            overview["unit_names"] = sorted(units)
+
+        except Exception as e:
+            print(f"⚠ Could not extract unit names: {e}")
+
+        # 3b. Compute actual_life from Grand Total rows in combined pivots.
+        #     raw_data Tpages has one row per print event (not accumulated),
+        #     so we must use the pivot Grand Total rows where Tpages is summed.
+        try:
+            import pandas as pd
+            total_tpages = 0.0
+            unit_count   = overview.get("unit_count", 0) or 1
+            for cat_data in all_pivots.values():
+                df = cat_data["combined"]
+                if "Unit" in df.columns and "Tpages" in df.columns:
+                    gt_mask = df["Unit"].astype(str).str.strip().str.lower() == "grand total"
+                    gt_tpages = pd.to_numeric(
+                        df.loc[gt_mask, "Tpages"], errors="coerce"
+                    ).fillna(0).sum()
+                    total_tpages += gt_tpages
+                    break   # one category is enough — Tpages totals are the same
+            if unit_count > 0 and total_tpages > 0:
+                overview["actual_life"] = int(round(total_tpages / unit_count, 0))
+                print(f"✓ Actual test life per unit: {overview['actual_life']:,} pages")
+        except Exception as e:
+            print(f"⚠ Could not compute actual_life: {e}")
+
         # 4. Generate summary
         summary_service = SummaryService(all_pivots)
         summary_data, summary_text = summary_service.generate()
@@ -64,7 +107,8 @@ class ReportPipeline:
             print(f"  Fallback: Q{quarter} {year}")
 
         # 6. Build output paths — save directly to user-selected folder
-        output_dir = Path(output_folder) / "reports"
+        from utils.paths import default_output_dir
+        output_dir = Path(output_folder) if output_folder else default_output_dir()
         output_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp       = datetime.now().strftime("%Y%m%d_%H%M%S")
