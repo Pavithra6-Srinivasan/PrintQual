@@ -4,6 +4,7 @@ pptx_slide_builder.py - Slide creation functions.
 Handles title slide, overview slide, and content slides.
 """
 
+import math
 from datetime import datetime
 
 from pptx.enum.text import PP_ALIGN
@@ -56,23 +57,26 @@ def add_title_slide(prs, overview, printer, variant, sub_assembly, year, quarter
     test_condition = overview.get("test_condition", "")
 
     # Remove variant suffix from printer if it's already there (case-insensitive)
-    product_base = printer
-    if variant and printer.lower().endswith(variant.lower()):
-        product_base = printer[:-len(variant)].strip()
+    product_base = printer or ""
+    if variant and product_base.lower().endswith(variant.lower()):
+        product_base = product_base[:-len(variant)].strip()
 
-    # Title: product base + variant, with proper title case
-    title_line = f"{product_base} {variant}".strip()
-    # Capitalize each word
-    title_line = " ".join(w.capitalize() for w in title_line.split())
+    # Title: product base + variant, with proper title case — skip empty parts
+    title_line = " ".join(w.capitalize() for w in " ".join(
+        p for p in [product_base, variant] if p
+    ).split())
 
     project_phase = overview.get("project_phase", "")
     phase_or_quarter = project_phase if project_phase else f"Q{quarter}FY{year}"
+
+    # Line 3: join only non-empty parts
+    line3 = "   ".join(p for p in [test_condition, sub_assembly, test_name] if p)
 
     add_text(title_line,
              0.50, 0.65, 30, bold=True)
     add_text(phase_or_quarter,
              1.25, 0.40, 16, color=COL_NAVY)
-    add_text(f"{test_condition}   {sub_assembly}   {test_name}",
+    add_text(line3,
              1.75, 0.55, 14)
     add_text(f"Date : {datetime.now().strftime('%d %b %Y')}",
              2.40, 0.35, 12, color=COL_NAVY)
@@ -93,15 +97,27 @@ def add_overview_slide(prs, overview, summary_data, printer, variant,
     test_condition = overview.get("test_condition", "")
 
     # Remove variant suffix from printer if it's already there (case-insensitive)
-    product_base = printer
-    if variant and printer.lower().endswith(variant.lower()):
-        product_base = printer[:-len(variant)].strip()
-    product_variant = f"{product_base} {variant}".strip()
+    product_base = printer or ""
+    if variant and product_base.lower().endswith(variant.lower()):
+        product_base = product_base[:-len(variant)].strip()
+    product_variant = " ".join(p for p in [product_base, variant] if p)
 
     project_phase = overview.get("project_phase", "")
     phase_or_quarter = project_phase if project_phase else f"Q{quarter}FY{year}"
-    title_str = (f"{product_variant} {phase_or_quarter} {test_condition} "
-                 f"{sub_assembly} {test_name} Summary")
+
+    # Skip product_variant if it already appears in one of the other parts
+    other_parts = [phase_or_quarter, test_condition, sub_assembly, test_name]
+    other_text  = " ".join(p for p in other_parts if p).lower()
+    pv_lower    = product_variant.lower()
+    show_product = product_variant and pv_lower not in other_text
+
+    title_str = " ".join(
+        p for p in [
+            product_variant if show_product else "",
+            phase_or_quarter, test_condition, sub_assembly, test_name, "Summary"
+        ]
+        if p
+    )
 
     # Title text box
     txb = slide.shapes.add_textbox(
@@ -124,7 +140,6 @@ def add_overview_slide(prs, overview, summary_data, printer, variant,
 
 
 def _add_overview_info_table(slide, overview):
-    import math
     units      = overview.get("unit_names", [])
     unit_str   = ", ".join(units)
     unit_count = overview.get("unit_count", len(units))
@@ -146,15 +161,18 @@ def _add_overview_info_table(slide, overview):
     ]
     col_widths = [1.1, 3.6, 1.8, 1.5, 1.5]   # sums to 9.5"
 
-    # Estimate value row height based on unit string wrapping in Unit Number column
-    UNIT_COL_W   = 3.6   # inches
-    CHAR_W_9PT   = 0.055 # inches per char at 9pt Calibri
-    chars_per_line = max(1, int(UNIT_COL_W / CHAR_W_9PT))
-    unit_lines   = max(1, math.ceil(len(unit_str) / chars_per_line)) if unit_str else 1
-    hdr_row_h    = 0.22
-    val_row_h    = max(0.22, 0.17 * unit_lines + 0.05)
-    tbl_y        = 0.45
-    tbl_h        = hdr_row_h + val_row_h
+    # Fixed header height; value height estimated dynamically from unit number wrapping
+    hdr_row_h = 0.30   # "Total Sample Size" wraps to 2 lines in narrow column
+    tbl_y     = 0.45
+
+    # Estimate lines needed for unit number cell (widest-varying column)
+    unit_col_w      = 3.6          # inches (col_widths[1])
+    char_w_9pt      = 0.052        # approx inch-per-char for 9pt Calibri
+    chars_per_line  = max(1, int(unit_col_w / char_w_9pt))
+    unit_lines      = max(1, math.ceil(len(unit_str) / chars_per_line)) if unit_str else 1
+    val_row_h       = max(0.35, unit_lines * 0.14)
+
+    tbl_h     = hdr_row_h + val_row_h
 
     table = slide.shapes.add_table(
         2, len(headers),
@@ -204,7 +222,7 @@ def _add_key_takeaways(prs, slide, summary_data, info_table_bottom):
     # Try to fit all groups in one slide (up to 4 in a 2x2 grid)
     if n_groups <= 4:
         label_h = 0.14
-        row_gap = 0.10
+        row_gap = 0.35
         # Height of each grid row = max of the two tables' heights
         grid_row_hs = {}
         for idx, g in enumerate(result_groups):
@@ -215,10 +233,10 @@ def _add_key_takeaways(prs, slide, summary_data, info_table_bottom):
             label_h + KT_LABEL_GAP + h + row_gap
             for h in grid_row_hs.values()
         )
-        avail_h = SLIDE_BOTTOM - (info_table_bottom + 0.20)
+        avail_h = SLIDE_BOTTOM - (info_table_bottom + 0.12)
 
         if total_h_needed <= avail_h:
-            _render_kt_grid(slide, prs, result_groups, info_table_bottom + 0.20, TABLE_W)
+            _render_kt_grid(slide, prs, result_groups, info_table_bottom + 0.12, TABLE_W)
             return
 
     # Fallback: 2 tables per slide
@@ -234,7 +252,7 @@ def _add_key_takeaways(prs, slide, summary_data, info_table_bottom):
 
         # "Key Takeaways" heading (only on first slide)
         if slide_idx == 0:
-            title_y = info_table_bottom + 0.20
+            title_y = info_table_bottom + 0.12
         else:
             title_y = 0.15
 
@@ -252,7 +270,7 @@ def _add_key_takeaways(prs, slide, summary_data, info_table_bottom):
 
         if len(groups_for_slide) == 1:
             # Single table — full width
-            table_y = title_y + 0.25
+            table_y = title_y + 0.34
             group   = groups_for_slide[0]
             _draw_kt_table(current_slide, prs, group, TABLE_X, table_y, TABLE_W)
         else:
@@ -264,7 +282,7 @@ def _add_key_takeaways(prs, slide, summary_data, info_table_bottom):
             row_count = max(len(g["rows"]) for g in groups_for_slide)
             tbl_h = hdr_height + row_height * row_count
 
-            start_y = title_y + 0.25
+            start_y = title_y + 0.34
 
             for idx, group in enumerate(groups_for_slide):
                 x = TABLE_X + idx * (tbl_w + gap)
@@ -283,35 +301,35 @@ def _add_key_takeaways(prs, slide, summary_data, info_table_bottom):
 
 
 KT_HDR_H      = 0.18   # header row height
-KT_PASS_ROW_H = 0.18   # height for PASS rows (no remarks)
-KT_REM_LINE_H = 0.16   # height per remark line (accounts for wrapping)
+KT_PASS_ROW_H = 0.22   # height for rows with no remarks (8pt text + ~0.05" top/bottom cell margins)
+KT_REM_LINE_H = 0.10   # additional height per wrapped remark line (8pt Calibri @ 80% lnSpc ≈ 0.089")
 KT_LABEL_GAP  = 0.05   # gap between condition label and table
-KT_REM_CHARS  = 68     # approx chars per line in remarks column at 8pt half-width (~3.1" / 0.048")
+KT_CHAR_W     = 0.048  # approx inch-per-char for 8pt Calibri (used to derive chars_per_line)
 
 
-def _estimate_remark_lines(remark_text, chars_per_line=KT_REM_CHARS):
+def _estimate_remark_lines(remark_text, chars_per_line):
     """Estimate wrapped line count for a remark string."""
-    import math
     if not remark_text:
         return 1
     return max(1, math.ceil(len(remark_text) / chars_per_line))
 
 
-def _kt_row_heights(rows, rem_col_w=3.7):
-    """Estimate per-row heights based on actual remark content and wrapping."""
+def _kt_row_heights(rows, col_w_rem):
+    """Estimate per-row heights based on actual remark content and column width."""
+    chars_per_line = max(20, int(col_w_rem / KT_CHAR_W))
     heights = []
     for row in rows:
         remarks = row.get("remarks", [])
         if not remarks:
             heights.append(KT_PASS_ROW_H)
         else:
-            total_lines = sum(_estimate_remark_lines(r) for r in remarks)
+            total_lines = sum(_estimate_remark_lines(r, chars_per_line) for r in remarks)
             heights.append(KT_PASS_ROW_H + KT_REM_LINE_H * max(0, total_lines - 1))
     return heights if heights else [KT_PASS_ROW_H]
 
 
-def _kt_table_h(rows):
-    return KT_HDR_H + sum(_kt_row_heights(rows))
+def _kt_table_h(rows, col_w_rem=3.10):
+    return KT_HDR_H + sum(_kt_row_heights(rows, col_w_rem))
 
 
 def _render_kt_grid(slide, prs, result_groups, start_y, max_width):
@@ -331,9 +349,9 @@ def _render_kt_grid(slide, prs, result_groups, start_y, max_width):
     gap     = 0.08
     tbl_w   = (max_width - gap) / 2
     label_h = 0.14
-    row_gap = 0.28
+    row_gap = 0.35
 
-    tbl_y_start = start_y + 0.34
+    tbl_y_start = start_y + 0.36
 
     # Pre-compute table heights per group
     tbl_heights = [_kt_table_h(g["rows"]) for g in result_groups]
@@ -380,7 +398,7 @@ def _draw_kt_table(slide, prs, group, x, y, width):
     col_w_rem  = max(0.5, width - col_w_cat - col_w_res)
     col_widths = [col_w_cat, col_w_res, col_w_rem]
 
-    row_heights = _kt_row_heights(rows)
+    row_heights = _kt_row_heights(rows, col_w_rem)
     table_h     = KT_HDR_H + sum(row_heights)
 
     table = slide.shapes.add_table(
@@ -484,24 +502,44 @@ def add_content_slide(prs, slide_blocks):
         if not flat_rows:
             continue
 
+        # ── Determine active (non-empty) columns ─────────────────────────────
+        # Cols 4-7 (Overall Result, Error Type, Media Name, Unit) are always
+        # included. Cols 0-3 (Media Type, Media Cat, Print Mode, Spec) are
+        # only included if at least one row has a non-empty value.
+        ALWAYS_INCLUDE = {4, 5, 6, 7}
+        active_cols = [
+            ci for ci in range(N_COLS)
+            if ci in ALWAYS_INCLUDE or any(row["cols"][ci] for row in flat_rows)
+        ]
+        orig_to_new  = {orig: new for new, orig in enumerate(active_cols)}
+        n_active     = len(active_cols)
+        headers_used = [HEADERS[ci] for ci in active_cols]
+        widths_used  = [COL_W[ci] for ci in active_cols]
+
+        # Redistribute freed width to the widest remaining column
+        freed = TABLE_W - sum(widths_used)
+        if freed > 0:
+            widest_new = widths_used.index(max(widths_used))
+            widths_used[widest_new] += freed
+
         row_heights = [estimate_row_h(r) for r in flat_rows]
         table_h     = HDR_H + sum(row_heights)
         n_total     = 1 + len(flat_rows)
 
         tbl_shape = slide.shapes.add_table(
-            n_total, N_COLS,
+            n_total, n_active,
             Inches(TABLE_X), Inches(cursor_y),
             Inches(TABLE_W), Inches(table_h))
         tbl = tbl_shape.table
 
         clear_table_style(tbl)
 
-        for ci, cw in enumerate(COL_W):
-            tbl.columns[ci].width = Inches(cw)
+        for new_ci, cw in enumerate(widths_used):
+            tbl.columns[new_ci].width = Inches(cw)
 
         # Header row
-        for ci, hdr in enumerate(HEADERS):
-            cell = tbl.cell(0, ci)
+        for new_ci, hdr in enumerate(headers_used):
+            cell = tbl.cell(0, new_ci)
             cell.fill.solid()
             cell.fill.fore_color.rgb = COL_BLUE
             set_text(cell, hdr, bold=True, fg=COL_WHITE,
@@ -509,16 +547,16 @@ def add_content_slide(prs, slide_blocks):
             set_border(cell)
 
         # Data rows
+        result_new_ci = orig_to_new.get(4)
         for ri, row in enumerate(flat_rows):
-            tr   = ri + 1
-            cols = row["cols"]
-
-            for ci, val in enumerate(cols):
-                cell = tbl.cell(tr, ci)
+            tr = ri + 1
+            for new_ci, orig_ci in enumerate(active_cols):
+                val  = row["cols"][orig_ci]
+                cell = tbl.cell(tr, new_ci)
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = COL_WHITE
 
-                if ci == 4 and val in ("PASS", "FAIL", "NO SPEC"):
+                if new_ci == result_new_ci and val in ("PASS", "FAIL", "NO SPEC"):
                     if val == "PASS":
                         cell.fill.fore_color.rgb = COL_PASS_BG
                         set_text(cell, val, bold=True, fg=COL_PASS_FG,
@@ -539,7 +577,7 @@ def add_content_slide(prs, slide_blocks):
                          size=PT_CONTENT_BODY, align=PP_ALIGN.LEFT)
                 set_border(cell)
 
-        apply_vertical_merges(tbl, flat_rows)
+        apply_vertical_merges(tbl, flat_rows, orig_to_new)
 
         # Set row heights AFTER merges so PowerPoint respects them
         tbl.rows[0].height = Inches(HDR_H)

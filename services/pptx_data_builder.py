@@ -51,7 +51,10 @@ def build_all_blocks(summary_data):
 
     blocks = []
     for (tc, cat_name, tray) in combos:
-        heading   = f"Test Condition: {tc}   |   Category: {cat_name}   |   Input Tray: {tray}"
+        parts = [f"Test Condition: {tc}", f"Category: {cat_name}"]
+        if tray:
+            parts.append(f"Input Tray: {tray}")
+        heading = "   |   ".join(parts)
         flat_rows = build_flat_rows(summary_data, tray, cat_name, tc)
         if flat_rows:
             blocks.append({"heading": heading, "rows": flat_rows, "cont": False})
@@ -86,9 +89,9 @@ def build_flat_rows(summary_data, tray, cat_name, test_condition=""):
             media_groups[key] = []
         media_groups[key].append(m)
 
-    # Plain first, then alphabetical
-    plain_keys = [k for k in media_order if k[0] == "Plain"]
-    other_keys = [k for k in media_order if k[0] != "Plain"]
+    # Plain first (case-insensitive), then alphabetical
+    plain_keys = [k for k in media_order if k[0].strip().lower().startswith("plain")]
+    other_keys = [k for k in media_order if not k[0].strip().lower().startswith("plain")]
     media_order = plain_keys + other_keys
 
     rows = []
@@ -236,7 +239,27 @@ def build_category_results(summary_data):
     Returns a list of (test_condition, rows) tuples — one entry per unique
     test condition found in the data. For Ambient there will be one entry;
     for Climatic there will be one entry per climatic condition value.
+
+    Categories are treated as "has spec" only if at least one media summary
+    for that (tc, category) returned a result other than NO SPEC / NO SPEC
+    PROVIDED.  This is determined by a pre-scan so the logic is product-
+    agnostic — no hardcoded category names needed.
     """
+    NO_SPEC_RESULTS = {"NO SPEC", "NO SPEC PROVIDED"}
+
+    # ── Pre-scan: determine which (tc, category) pairs have a spec ────────────
+    has_spec = {}   # (tc, cat_name) → True/False
+    for cat in summary_data["categories"]:
+        cat_name = cat["category"]
+        for m in cat["media_summaries"]:
+            tc     = m.get("test_condition", "")
+            result = m.get("overall_result", "")
+            key    = (tc, cat_name)
+            if result not in NO_SPEC_RESULTS:
+                has_spec[key] = True
+            elif key not in has_spec:
+                has_spec[key] = False
+
     # tc_map: {test_condition: {category: {result, remarks}}}
     tc_map = {}
 
@@ -254,43 +277,47 @@ def build_category_results(summary_data):
             spec_str   = f"{spec_val:.2f}" if spec_val is not None else "N/A"
             errors     = m.get("errors", [])
 
-            NO_SPEC_CATS = ("Other Defects", "PQ")
-            is_no_spec_cat = cat_name in NO_SPEC_CATS
+            cat_has_spec = has_spec.get((tc, cat_name), False)
 
             if tc not in tc_map:
                 tc_map[tc] = {}
             if cat_name not in tc_map[tc]:
-                default_result = "No issue" if is_no_spec_cat else "PASS"
+                default_result = "PASS" if cat_has_spec else "No issue"
                 tc_map[tc][cat_name] = {"result": default_result, "remarks": []}
 
             mt_label = f"{media_type}_{media_cat}" if media_cat else media_type
 
-            if result == "FAIL":
-                tc_map[tc][cat_name]["result"] = "FAIL"
-                for err in errors:
-                    error  = err.get("error", "")
-                    rate   = err.get("rate", 0)
-                    remark = (
-                        f"{mt_label}_{tray}_{mode}_"
-                        f"{error} error rate of {rate:.2f}/K "
-                        f"(Spec: {spec_str}/K)"
-                    )
-                    if remark not in tc_map[tc][cat_name]["remarks"]:
-                        tc_map[tc][cat_name]["remarks"].append(remark)
-
-            elif result == "NO SPEC" and errors:
-                # No-spec categories (Other Defects, PQ): errors present → With observation
-                if tc_map[tc][cat_name]["result"] not in ("FAIL",):
-                    tc_map[tc][cat_name]["result"] = "With observation"
-                for err in errors:
-                    error = err.get("error", "")
-                    rate  = err.get("rate", 0)
-                    remark = (
-                        f"{mt_label}_{tray}_{mode}_"
-                        f"{error} error rate of {rate:.2f}/K"
-                    )
-                    if remark not in tc_map[tc][cat_name]["remarks"]:
-                        tc_map[tc][cat_name]["remarks"].append(remark)
+            if cat_has_spec:
+                # Spec-based category: PASS / FAIL
+                if result == "FAIL":
+                    tc_map[tc][cat_name]["result"] = "FAIL"
+                    for err in errors:
+                        error  = err.get("error", "")
+                        rate   = err.get("rate", 0)
+                        remark = (
+                            f"{mt_label}_{tray}_{mode}_"
+                            f"{error} error rate of {rate:.2f}/K "
+                            f"(Spec: {spec_str}/K)"
+                        )
+                        if remark not in tc_map[tc][cat_name]["remarks"]:
+                            tc_map[tc][cat_name]["remarks"].append(remark)
+            else:
+                # No-spec category: No issue / With observation
+                if result not in NO_SPEC_RESULTS:
+                    # Unexpected spec result in a no-spec category — treat conservatively
+                    pass
+                if errors:
+                    if tc_map[tc][cat_name]["result"] != "With observation":
+                        tc_map[tc][cat_name]["result"] = "With observation"
+                    for err in errors:
+                        error = err.get("error", "")
+                        rate  = err.get("rate", 0)
+                        remark = (
+                            f"{mt_label}_{tray}_{mode}_"
+                            f"{error} error rate of {rate:.2f}/K"
+                        )
+                        if remark not in tc_map[tc][cat_name]["remarks"]:
+                            tc_map[tc][cat_name]["remarks"].append(remark)
 
     result_groups = []
     for tc in sorted(tc_map.keys()):

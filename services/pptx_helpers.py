@@ -127,21 +127,33 @@ def set_text(cell, text, bold=False, fg=None,
 
 # ── Vertical merge ────────────────────────────────────────────────────────────
 
-def apply_vertical_merges(tbl, flat_rows):
-    """Merge blank cells vertically on cols 0-5 (media, media_cat, mode, spec, result, error)."""
-    for ci in range(6):
+def apply_vertical_merges(tbl, flat_rows, orig_to_new=None):
+    """Merge blank cells vertically on cols 0-5 (media, media_cat, mode, spec, result, error).
+
+    orig_to_new: mapping from original column index → table column index.
+                 If None, assumes a 1-to-1 mapping (all columns present).
+    """
+    for orig_ci in range(6):
+        # Resolve table column index; skip if this column was removed
+        if orig_to_new is not None:
+            if orig_ci not in orig_to_new:
+                continue
+            tbl_ci = orig_to_new[orig_ci]
+        else:
+            tbl_ci = orig_ci
+
         ri = 0
         n  = len(flat_rows)
         while ri < n:
-            val = flat_rows[ri]["cols"][ci]
+            val = flat_rows[ri]["cols"][orig_ci]
             if val != "":
                 span = 1
-                while ri + span < n and flat_rows[ri + span]["cols"][ci] == "":
+                while ri + span < n and flat_rows[ri + span]["cols"][orig_ci] == "":
                     span += 1
                 if span > 1:
-                    _set_rowspan(tbl.cell(ri + 1, ci), span)
+                    _set_rowspan(tbl.cell(ri + 1, tbl_ci), span)
                     for k in range(1, span):
-                        _mark_vmerge(tbl.cell(ri + 1 + k, ci))
+                        _mark_vmerge(tbl.cell(ri + 1 + k, tbl_ci))
                 ri += span
             else:
                 ri += 1

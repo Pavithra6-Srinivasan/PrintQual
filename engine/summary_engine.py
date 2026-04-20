@@ -56,8 +56,9 @@ class PivotSummaryEngine:
         categories = []
 
         for category_name, data in self.all_pivots.items():
-            combined_df = data["combined"].copy()
-            config      = data["config"]
+            combined_df    = data["combined"].copy()
+            config         = data["config"]
+            spec_has_tray  = data.get("spec_has_tray", True)
 
             combined_df    = self._normalise_result_col(combined_df)
             grand_total_df = self._get_grand_total_rows(combined_df)
@@ -82,12 +83,28 @@ class PivotSummaryEngine:
                 gt_tc   = self._filter_by_test_condition(grand_total_df, tc) if has_tc else grand_total_df
                 unit_tc = self._filter_by_test_condition(unit_df, tc)        if has_tc else unit_df
 
-                trays = gt_tc[tray_col].dropna().unique() \
-                        if tray_col and not gt_tc.empty else [None]
+                if spec_has_tray and tray_col and not gt_tc.empty:
+                    trays = gt_tc[tray_col].dropna().unique()
+                else:
+                    trays = [None]
 
                 for tray in sorted(trays, key=str):
-                    gt_tray   = self._filter_by_tray(gt_tc, tray)
-                    unit_tray = self._filter_by_tray(unit_tc, tray)
+                    gt_tray   = self._filter_by_tray(gt_tc, tray) if spec_has_tray else gt_tc
+                    unit_tray = self._filter_by_tray(unit_tc, tray) if spec_has_tray else unit_tc
+
+                    # Normalise Print Mode and Media Type before grouping so
+                    # casing/spacing variants ("simplex" vs "Simplex") don't
+                    # create duplicate entries.
+                    if "Print Mode" in gt_tray.columns:
+                        gt_tray   = gt_tray.copy()
+                        unit_tray = unit_tray.copy()
+                        gt_tray["Print Mode"]   = gt_tray["Print Mode"].astype(str).str.strip().str.title()
+                        unit_tray["Print Mode"] = unit_tray["Print Mode"].astype(str).str.strip().str.title()
+
+                    if "Media Type" in gt_tray.columns:
+                        gt_tray["Media Type"]   = gt_tray["Media Type"].astype(str).str.strip().str.title()
+                        unit_tray["Media Type"] = unit_tray["Media Type"].astype(str).str.strip().str.title() \
+                                                  if "Media Type" in unit_tray.columns else unit_tray.get("Media Type")
 
                     # Get all print modes present for this tray
                     modes = gt_tray["Print Mode"].dropna().unique() \
@@ -147,7 +164,7 @@ class PivotSummaryEngine:
                                     "media_type":     media_type,
                                     "media_cat":      str(media_cat).strip() if media_cat is not None else "",
                                     "overall_result": overall_result,
-                                    "tray":           tray,
+                                    "tray":           (str(tray).strip() if tray is not None else "") if spec_has_tray else "",
                                     "mode":           mode,
                                     "spec":           spec_val,
                                     "errors":         errors,
@@ -243,10 +260,8 @@ class PivotSummaryEngine:
                 spec_val = round(float(spec_series.iloc[0]), 2)
 
         if total_col not in gt_media.columns or spec_val is None:
-            # No total column or no spec — fall back to worst result
-            if "FAIL" in results:
-                return "FAIL", None, spec_val
-            return "PASS", None, spec_val
+            # No spec available for this combination
+            return "NO SPEC", None, None
 
         # Tpages-weighted average of total rate across all media names
         tpages = pd.to_numeric(gt_media["Tpages"], errors="coerce").fillna(0)

@@ -59,8 +59,26 @@ class UnifiedPivotGenerator:
             self.raw_data = standardize_column_names(self.raw_data, self.COLUMN_ALIASES)
             _RAW_DATA_CACHE[raw_data_file] = self.raw_data
         
-        self.spec_sheet = detect_spec_sheet(self.raw_data)
-        
+        # Normalise Test Condition: if the first value is "ambient" (any casing/
+        # abbreviation like "Amb."), treat the whole column as Ambient so the
+        # summary engine doesn't create separate groups for variant spellings.
+        if 'Test Condition' in self.raw_data.columns:
+            first_tc = (
+                self.raw_data['Test Condition']
+                .dropna()
+                .astype(str)
+                .str.strip()
+                .iloc[0]
+                .lower()
+                if not self.raw_data['Test Condition'].dropna().empty
+                else ""
+            )
+            if first_tc == "ambient" or first_tc.startswith("amb"):
+                self.raw_data = self.raw_data.copy()
+                self.raw_data['Test Condition'] = "Ambient"
+
+        self.spec_sheet = detect_spec_sheet(self.raw_data, spec_file_path)
+
         result = prepare_error_columns(self.raw_data, self.config)
         
         if isinstance(result, tuple) and len(result) == 2:
@@ -68,6 +86,32 @@ class UnifiedPivotGenerator:
         else:
             self.processed_data = result if isinstance(result, pd.DataFrame) else pd.DataFrame()
             self.error_output_columns = []
+
+        # Drop rows with empty Input Tray — they would produce slides with
+        # blank tray headings and cannot be meaningfully reported.
+        tray_col = next(
+            (c for c in ("Input Tray", "Input_Tray", "Tray")
+             if c in self.processed_data.columns),
+            None
+        )
+        if tray_col:
+            before = len(self.processed_data)
+            self.processed_data = self.processed_data[
+                self.processed_data[tray_col].notna() &
+                (self.processed_data[tray_col].astype(str).str.strip() != "")
+            ].reset_index(drop=True)
+            dropped = before - len(self.processed_data)
+            if dropped:
+                print(f"⚠ Dropped {dropped} rows with empty Input Tray")
+
+        # Drop duplicate columns (keep first) — duplicate column names cause
+        # groupby().agg() to receive a DataFrame instead of a Series and crash.
+        if self.processed_data.columns.duplicated().any():
+            dupes = self.processed_data.columns[self.processed_data.columns.duplicated()].tolist()
+            print(f"⚠ Dropping duplicate columns: {dupes}")
+            self.processed_data = self.processed_data.loc[
+                :, ~self.processed_data.columns.duplicated()
+            ]
 
         self.numeric_columns = ['Tpages'] + self.error_output_columns
         
@@ -103,6 +147,9 @@ class UnifiedPivotGenerator:
                 except Exception as e:
                     pass  # Silently fail, validator stays None
 
+        # Expose whether the spec differentiates by Input Tray
+        self.spec_has_tray = self.spec_validator.has_tray if self.spec_validator else True
+
     def _detect_printer_info(self):
         """Extract printer metadata (only called once)."""
         self.detected_main_printer = None
@@ -124,7 +171,7 @@ class UnifiedPivotGenerator:
                 self.sub_assembly = "Paperpath"
 
         if not self.sub_assembly:
-            self.sub_assembly = "Unknown"
+            self.sub_assembly = None
 
         if 'Program & SKU' in self.raw_data.columns:
             sku_series = self.raw_data['Program & SKU'].dropna().astype(str)
@@ -151,7 +198,7 @@ class UnifiedPivotGenerator:
                 elif "lite" in raw_lower:
                     self.detected_variant = "Lite"
                 else:
-                    self.detected_variant = "Standard"
+                    self.detected_variant = None
 
     def extract_overview_info(self):
         """Extract overview information from raw data."""
@@ -191,12 +238,21 @@ class UnifiedPivotGenerator:
 
         date_col = None
         for col in df.columns:
-            if str(col).strip().lower() == "date":
+            col_lower = str(col).strip().lower()
+            if col_lower == "date" or col_lower.startswith("date"):
                 date_col = col
                 break
 
         if date_col:
-            dates = pd.to_datetime(df[date_col], errors="coerce").dropna()
+            raw_dates = df[date_col].dropna()
+            # xlsb files return dates as Excel serial integers — convert those first
+            if pd.api.types.is_integer_dtype(raw_dates) or pd.api.types.is_float_dtype(raw_dates):
+                try:
+                    dates = pd.to_datetime(raw_dates.astype(int), unit="D", origin="1899-12-30", errors="coerce").dropna()
+                except Exception:
+                    dates = pd.Series(dtype="datetime64[ns]")
+            else:
+                dates = pd.to_datetime(raw_dates, errors="coerce").dropna()
             if not dates.empty:
                 test_start = dates.min().strftime("%d %b %Y")
                 test_end = dates.max().strftime("%d %b %Y")
@@ -205,7 +261,8 @@ class UnifiedPivotGenerator:
         if "Test Condition" in df.columns:
             vals = df["Test Condition"].dropna().astype(str).str.strip()
             if not vals.empty:
-                test_condition = "Ambient" if vals.str.lower().eq("ambient").all() else "Climatic"
+                first_val = vals.iloc[0]
+                test_condition = "Ambient" if first_val.lower() == "ambient" else "Climatic"
 
         project_phase = ""
         for col in df.columns:

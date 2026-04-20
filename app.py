@@ -41,7 +41,7 @@ class PivotGeneratorApp:
         filename = filedialog.askopenfilename(
             title="Select Raw Data File",
             filetypes=[
-                ("Excel files", "*.xlsx *.xlsm *.xls"),
+                ("Excel files", "*.xlsx *.xlsm *.xls *.xlsb"),
                 ("All files", "*.*")
             ]
         )

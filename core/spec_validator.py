@@ -15,6 +15,20 @@ class SpecValidator:
         self.sub_assembly = str(sub_assembly).strip().lower() if sub_assembly else None
 
         self.spec_df = self.load_specs()
+        self.has_tray = self._check_has_tray()
+
+    def _check_has_tray(self):
+        """True if the spec sheet uses Input Tray as a differentiating column."""
+        if "Input Tray" not in self.spec_df.columns:
+            return False
+        return (
+            self.spec_df["Input Tray"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .ne("")
+            .any()
+        )
 
     # LOAD SPEC SHEET
     def load_specs(self):
@@ -113,9 +127,17 @@ class SpecValidator:
         if normalised_pivot in options:
             return True
 
+        # Plural-tolerant match — try stripping a trailing 's' from the pivot value
+        # so "cards" matches "card", "envelopes" matches "envelope", etc.
+        singular_pivot = normalised_pivot.rstrip("s") if normalised_pivot.endswith("s") else None
+        if singular_pivot and singular_pivot in options:
+            return True
+
         # Word-level match — e.g. variant "hi" matches product entry "marconi hi"
         for opt in options:
             if normalised_pivot in opt.split():
+                return True
+            if singular_pivot and singular_pivot in opt.split():
                 return True
 
         return False

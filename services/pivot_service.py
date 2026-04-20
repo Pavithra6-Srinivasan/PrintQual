@@ -63,8 +63,9 @@ class PivotService:
             combined_pivot = generator.create_combined_pivot()
 
             all_pivots[config.name] = {
-                "combined": combined_pivot,
-                "config": config
+                "combined":      combined_pivot,
+                "config":        config,
+                "spec_has_tray": generator.spec_has_tray,
             }
             
             # Single progress indicator per category

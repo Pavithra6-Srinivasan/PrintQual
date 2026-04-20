@@ -1,51 +1,90 @@
 import re
+import openpyxl
 
-def detect_spec_sheet(raw_df):
-    """
-    Detect which sheet in the spec file to use.
-    Input: raw_df (DataFrame)
-    Output: sheet name or None
-    """
 
+def detect_spec_sheet(raw_df, spec_file_path=None):
+    """
+    Detect which sheet in the spec file to use by matching the product name
+    from 'Program & SKU' against the sheet names in the spec file.
+
+    Matching rules (in priority order):
+      1. Exact match (case-insensitive)
+      2. Sheet name is a substring of the product string (longest match wins)
+         e.g. product "Ruby Standard Paperpath" → sheet "Ruby Standard"
+      3. Word-token overlap: sheet whose words best overlap with product words
+         (most matching words wins; ties broken by longer sheet name)
+         e.g. product "Ruby Life Test" → sheet "Ruby Topaz" matches on "Ruby"
+              product "Topaz Paperpath" → sheet "Ruby Topaz" matches on "Topaz"
+
+    This requires no hardcoding — teams just need to name the spec sheet
+    after one or more words from the product name.
+    """
     if 'Program & SKU' not in raw_df.columns:
         print("✗ Program & SKU not found → cannot detect spec sheet")
         return None
 
-    values = raw_df['Program & SKU'].dropna().astype(str).str.lower()
+    product_str = (
+        raw_df['Program & SKU']
+        .dropna()
+        .astype(str)
+        .iloc[0]
+        .strip()
+        if not raw_df['Program & SKU'].dropna().empty
+        else ""
+    )
+    if not product_str:
+        print("✗ Program & SKU is empty → cannot detect spec sheet")
+        return None
 
-    if values.str.contains('marconi').any():
-        print("✓ Spec sheet detected: Marconi")
-        return 'Marconi'
+    if not spec_file_path:
+        print("✗ No spec file provided → cannot detect spec sheet")
+        return None
 
-    if values.str.contains('moreto').any():
-        print("✓ Spec sheet detected: Moreto")
-        return 'Moreto'
+    # Read sheet names from spec file
+    try:
+        wb = openpyxl.load_workbook(spec_file_path, read_only=True, data_only=True)
+        sheet_names = wb.sheetnames
+        wb.close()
+    except Exception as e:
+        print(f"✗ Could not read spec file sheets: {e}")
+        return None
 
-    if values.str.contains('lebi').any():
-        print("✓ Spec sheet detected: LEBI")
-        return 'LEBI'
+    product_lower = product_str.lower()
 
-    if values.str.contains('narita').any():
-        print("✓ Spec sheet detected: Narita")
-        return 'Narita'
+    # Priority 1: exact match (case-insensitive)
+    for sheet in sheet_names:
+        if sheet.lower() == product_lower:
+            print(f"✓ Spec sheet matched (exact): {sheet}")
+            return sheet
 
-    if values.str.contains('poseidon').any():
-        print("✓ Spec sheet detected: Poseidon")
-        return 'Poseidon'
+    # Priority 2: sheet name appears in product string — longest match wins
+    # e.g. product "Ruby Standard Paperpath" → sheet "Ruby Standard"
+    candidates = [s for s in sheet_names if s.lower() in product_lower]
+    if candidates:
+        best = max(candidates, key=lambda s: len(s))
+        print(f"✓ Spec sheet matched '{product_str}' → '{best}' (substring)")
+        return best
 
-    if values.str.contains('ruby').any() or values.str.contains('topaz').any():
-        print("✓ Spec sheet detected: Ruby Topaz")
-        return 'Ruby Topaz'
+    # Priority 3: word-token overlap
+    # e.g. product "Ruby Paperpath" → sheet "Ruby Topaz" (shares "Ruby")
+    #      product "Topaz Life Test" → sheet "Ruby Topaz" (shares "Topaz")
+    product_tokens = set(product_lower.split())
+    best_sheet  = None
+    best_score  = 0
 
-    if values.str.contains('sayan').any():
-        print("✓ Spec sheet detected: Sayan")
-        return 'Sayan'
+    for sheet in sheet_names:
+        sheet_tokens = set(sheet.lower().split())
+        overlap = len(product_tokens & sheet_tokens)
+        if overlap > best_score or (overlap == best_score and best_sheet and len(sheet) > len(best_sheet)):
+            best_score = overlap
+            best_sheet = sheet
 
-    if values.str.contains('victoria').any():
-        print("✓ Spec sheet detected: Victoria")
-        return 'Victoria'
+    if best_score > 0:
+        print(f"✓ Spec sheet matched '{product_str}' → '{best_sheet}' (token overlap: {best_score} word(s))")
+        return best_sheet
 
-    print("⚠ Could not detect spec sheet from Program & SKU")
+    print(f"⚠ No spec sheet matched for '{product_str}'")
+    print(f"  Available sheets: {', '.join(sheet_names)}")
     return None
 
 def extract_year_quarter(filename: str):

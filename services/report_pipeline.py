@@ -111,8 +111,11 @@ class ReportPipeline:
         output_dir = Path(output_folder) if output_folder else default_output_dir()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp       = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_name       = f"{printer}_{variant}_{sub_assembly}_Q{quarter}FY{year}"
+        timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
+        name_parts = [p for p in [printer, variant, sub_assembly] if p]
+        phase_part = overview.get("project_phase", "") or f"Q{quarter}FY{year}"
+        name_parts.append(phase_part)
+        base_name  = "_".join(name_parts)
         excel_filename  = f"{base_name}_Report_{timestamp}.xlsx"
         pptx_filename   = f"{base_name}_Summary_{timestamp}.pptx"
         excel_path      = output_dir / excel_filename

@@ -26,7 +26,7 @@ INTERVENTION_CONFIG = SpecCategoryConfig(
     error_column_config={
         'NP': ['NP_Top', 'NP_Middle', 'NP_Bottom1', 'NP_Bottom2', 'NP_Last Page'],
         'MP': ['MP_Top', 'MP_Middle', 'MP_Bottom1', 'MP_Bottom2', 'MP_Last page', 'MMP_Top', 'MMP_Middle', 'MMP_Bottom1', 'MMP_Bottom2', 'MMP_Last page'],
-        'TP': ['TP_Top', 'TP_Middle', 'TP_Bottom1', 'TP_Bottom2', 'TP_Last page'],
+        'TP': ['TP_Top', 'TP_Middle', 'TP_Bottom', 'TP_Bottom1', 'TP_Bottom2', 'TP_Last page'],
         'PJ': ['PJ_S1_Z1', 'PJ_S1_Z2', 'PJ_S1_Z3', 'PJ_S1_Z4', 'PJ_S1_Z5', 'PJ_S1_Z6', 'PJ_S1_Z7', 'PJ_S1_Z8', 'PJ_S2_Z1', 'PJ_S2_Z2', 'PJ_S2_Z3', 'PJ_S2_Z4', 'PJ_S2_Z5',
                'PJ_S2_Z6', 'PJ_S2_Z7', 'PJ_S2_Z8'],
         'PS': ['PS_S1_Z1', 'PS_S1_Z2', 'PS_S1_Z3', 'PS_S1_Z4', 'PS_S1_Z5', 'PS_S1_Z6', 'PS_S1_Z7', 'PS_S1_Z8', 'PS_S2_Z1', 'PS_S2_Z2', 'PS_S2_Z3', 'PS_S2_Z4', 
@@ -122,6 +122,8 @@ SOFT_ERROR_CONFIG = SpecCategoryConfig(
         'Obvious Skew_S1': 'Obvious Skew_S1',
         'Obvious Skew_S2': 'Obvious Skew_S2',
         'Missing Bottom Line_S1': 'Missing Bottom Line_S1',
+        'Margin Shift up_S1': 'Margin Shift up_S1',
+        'Margin Shift down_S2': 'Margin Shift down_S2'
     },
     total_column_name="Sum of Total Soft Error"
 )
@@ -176,7 +178,9 @@ OTHER_DEFECTS_CONFIG = SpecCategoryConfig(
         'Service Station Stall': 'Service Station Stall',
         'Auto Job Cancel': 'Auto Job Cancel',
         'Auto Power Cycle': 'Auto Power Cycle',
-        'Paper out of order': 'Paper out of order'
+        'Paper out of order': 'Paper out of order',
+        'Cartridges Problem _S1': 'Cartridges Problem _S1',
+        'Cartridges Problem _S2': 'Cartridges Problem _S2'
     },
     total_column_name="Sum of Total Other Defects"
 )

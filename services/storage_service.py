@@ -29,8 +29,18 @@ class StorageService:
 
             # One sheet per category
             for category_name, pivot_data in all_pivots.items():
-                config = pivot_data["config"]
-                combined_df = pivot_data["combined"]
+                config         = pivot_data["config"]
+                combined_df    = pivot_data["combined"].copy()
+                spec_has_tray  = pivot_data.get("spec_has_tray", True)
+
+                if not spec_has_tray:
+                    tray_col = next(
+                        (c for c in ("Input Tray", "Input_Tray", "Tray")
+                         if c in combined_df.columns),
+                        None
+                    )
+                    if tray_col:
+                        combined_df[tray_col] = ""
 
                 sheet_name = category_name[:31]
                 combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
