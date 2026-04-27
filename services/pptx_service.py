@@ -55,12 +55,14 @@ def _apply_overview_hyperlinks(prs):
         return
 
     # Map heading text → slide index
+    # Heading always contains "Test Condition:" and "Category:"; "Input Tray:" is
+    # only present when tray data exists, so don't require it here.
     slide_map = {}
     for idx, slide in enumerate(prs.slides):
         for shape in slide.shapes:
             if shape.has_text_frame:
                 txt = shape.text_frame.text.strip()
-                if txt and "Input Tray:" in txt and "Category:" in txt:
+                if txt and "Test Condition:" in txt and "Category:" in txt:
                     slide_map[txt] = idx
 
     for link_info in prs._overview_hyperlinks:

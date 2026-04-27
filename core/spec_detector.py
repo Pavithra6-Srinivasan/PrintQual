@@ -14,10 +14,6 @@ def detect_spec_sheet(raw_df, spec_file_path=None):
       3. Word-token overlap: sheet whose words best overlap with product words
          (most matching words wins; ties broken by longer sheet name)
          e.g. product "Ruby Life Test" → sheet "Ruby Topaz" matches on "Ruby"
-              product "Topaz Paperpath" → sheet "Ruby Topaz" matches on "Topaz"
-
-    This requires no hardcoding — teams just need to name the spec sheet
-    after one or more words from the product name.
     """
     if 'Program & SKU' not in raw_df.columns:
         print("✗ Program & SKU not found → cannot detect spec sheet")
@@ -58,7 +54,6 @@ def detect_spec_sheet(raw_df, spec_file_path=None):
             return sheet
 
     # Priority 2: sheet name appears in product string — longest match wins
-    # e.g. product "Ruby Standard Paperpath" → sheet "Ruby Standard"
     candidates = [s for s in sheet_names if s.lower() in product_lower]
     if candidates:
         best = max(candidates, key=lambda s: len(s))
@@ -66,8 +61,6 @@ def detect_spec_sheet(raw_df, spec_file_path=None):
         return best
 
     # Priority 3: word-token overlap
-    # e.g. product "Ruby Paperpath" → sheet "Ruby Topaz" (shares "Ruby")
-    #      product "Topaz Life Test" → sheet "Ruby Topaz" (shares "Topaz")
     product_tokens = set(product_lower.split())
     best_sheet  = None
     best_score  = 0

@@ -25,7 +25,7 @@ INTERVENTION_CONFIG = SpecCategoryConfig(
     name="Intervention",
     error_column_config={
         'NP': ['NP_Top', 'NP_Middle', 'NP_Bottom1', 'NP_Bottom2', 'NP_Last Page'],
-        'MP': ['MP_Top', 'MP_Middle', 'MP_Bottom1', 'MP_Bottom2', 'MP_Last page', 'MMP_Top', 'MMP_Middle', 'MMP_Bottom1', 'MMP_Bottom2', 'MMP_Last page'],
+        'MP': ['MP_Top', 'MP_Middle', 'MP_Bottom', 'MP_Bottom1', 'MP_Bottom2', 'MP_Last page', 'MMP_Top', 'MMP_Middle', 'MMP_Bottom1', 'MMP_Bottom2', 'MMP_Last page'],
         'TP': ['TP_Top', 'TP_Middle', 'TP_Bottom', 'TP_Bottom1', 'TP_Bottom2', 'TP_Last page'],
         'PJ': ['PJ_S1_Z1', 'PJ_S1_Z2', 'PJ_S1_Z3', 'PJ_S1_Z4', 'PJ_S1_Z5', 'PJ_S1_Z6', 'PJ_S1_Z7', 'PJ_S1_Z8', 'PJ_S2_Z1', 'PJ_S2_Z2', 'PJ_S2_Z3', 'PJ_S2_Z4', 'PJ_S2_Z5',
                'PJ_S2_Z6', 'PJ_S2_Z7', 'PJ_S2_Z8'],
@@ -148,6 +148,7 @@ OTHER_DEFECTS_CONFIG = SpecCategoryConfig(
     name="Other Defects",
     error_column_config={
         'Blank Page Eject': 'Blank Page Eject',
+        'Carriage Stall': 'Carriage Stall',
         'Carriage Stall_S1': 'Carriage Stall_S1',
         'Carriage Stall_S2': 'Carriage Stall_S2',
         'Carriage Jam_S1': 'Carriage Jam_S1',
@@ -222,6 +223,7 @@ PQ_CONFIG = SpecCategoryConfig(
         'Ink Drops': 'Ink Drops',
         'Ink Mixing_S1': 'Ink Mixing_S1',
         'Ink Mixing_S2': 'Ink Mixing_S2',
+        'Nozzle Out': 'Nozzle Out',
         'Massive Nozzle Out': 'Massive Nozzle Out',
         'Nozzle Out_Minor_S1': 'Nozzle Out_Minor_S1',
         'Nozzle Out_Moderate_S1': 'Nozzle Out_Moderate_S1',
@@ -277,7 +279,7 @@ ADF_INTERVENTION_CONFIG = SpecCategoryConfig(
     error_column_config={
         'ADF No Pick': ['ADF No Pick_Top (Top 5 sheets)', 'ADF No Pick_Middle', 'ADF No Pick_Bottom (Last 5 sheets)', 'ADF No Pick_ Last Sheet'],
         'ADF Multipick': ['ADF MP_Top (Top 5 sheets)', 'ADF MP_Middle', 'ADF MP_Bottom (Last 5 sheets)', 'ADF MP_2nd Last sheets'],
-        'ADF Jam': ['ADF Jam Z1', 'ADF Jam_Z2', 'ADF Jam_Z3', 'ADF Jam_Z4', 'ADF Jam_Z5', 'ADF Jam_Z6', 'ADF Jam_Z7'],
+        'ADF Jam': ['ADF Jam_Z1', 'ADF Jam_Z2', 'ADF Jam_Z3', 'ADF Jam_Z4', 'ADF Jam_Z5', 'ADF Jam_Z6', 'ADF Jam_Z7'],
         'ADF Stall': ['ADF Stall_Z1', 'ADF Stall_Z2', 'ADF Stall_Z3', 'ADF Stall_Z4', 'ADF Stall_Z5', 'ADF Stall_Z6', 'ADF Stall_Z7']
     },
     total_column_name="Sum of Total Intervention"
@@ -316,8 +318,6 @@ ADF_SOFT_ERROR_CONFIG = SpecCategoryConfig(
         'NMB_Margin Shift right': ['NMB_Margin Shift right_S1', 'NMB_Margin Shift right_S2'],
         'Obvious Image Skew': ['Obvious Image Skew_S1', 'Obvious Image Skew_S2'],
         'Wavy Line': ['Wavy Line_S1', 'Wavy Line_S2'],
-        'ADF TOF Drag': ['ADF TOF Drag_S1', 'ADF TOF Drag_S2'],
-        'ADF Bottom Drag': ['ADF Bottom Drag_S1', 'ADF Bottom Drag_S2'],
         'FB TOF Drag_S1': 'FB TOF Drag_S1',
         'FB Bottom Drag_S1': 'FB Bottom Drag_S1'
     },
@@ -327,6 +327,9 @@ ADF_SOFT_ERROR_CONFIG = SpecCategoryConfig(
 ADF_IMAGE_QUALITY_CONFIG = SpecCategoryConfig(
     name="Image Quality",
     error_column_config={
+        'ADF Hand Off': 'ADF Hand Off',
+        'ADF TOF Drag': ['ADF TOF Drag_S1', 'ADF TOF Drag_S2'],
+        'ADF Bottom Drag': ['ADF Bottom Drag_S1', 'ADF Bottom Drag_S2'],
         '1 Vertical Line': ['1 Vertical Line_S1', '1 Vertical Line_(S1)', '1 Vertical Line_S2', '1 Vertical Line_(S2)'],
         'Multiple Vertical Lines': ['Multiple Vertical Lines_S1', 'Multiple Vertical Lines_(S1)', 'Multiple Vertical Lines_S2', 'Multiple Vertical Lines_(S2)'],
         '1 Vertical Streak': ['1 Vertical Streak_S1', '1 Vertical Streak_S2'],
@@ -401,7 +404,9 @@ ADF_OTHER_ISSUE_CONFIG = SpecCategoryConfig(
         'Black Bar_S1': 'Black Bar_S1',
         'Black Bar_S2': 'Black Bar_S2',
         'Top Black Bar_S1': 'Top Black Bar_S1',
-        'Top Black Bar_S2': 'Top Black Bar_S2'
+        'Top Black Bar_S2': 'Top Black Bar_S2',
+        'Missing Bottom Line': 'Missing Bottom Line',
+        'Excess Area': 'Excess Area'
     },
     total_column_name="Sum of Total Other Issue"
 )

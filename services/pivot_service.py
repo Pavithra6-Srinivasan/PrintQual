@@ -66,6 +66,7 @@ class PivotService:
                 "combined":      combined_pivot,
                 "config":        config,
                 "spec_has_tray": generator.spec_has_tray,
+                "sub_assembly":  generator.sub_assembly,
             }
             
             # Single progress indicator per category

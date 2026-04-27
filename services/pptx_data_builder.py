@@ -197,9 +197,13 @@ def paginate_blocks(all_blocks):
     """
     slides = []
 
+    # Context column indices: media(0), media_cat(1), mode(2), spec(3), result(4)
+    _CTX_KEYS = ["media", "media_cat", "mode", "spec", "result"]
+
     for block in all_blocks:
         remaining_rows = list(block["rows"])
         first_chunk    = True
+        last_ctx       = [""] * 5   # last seen non-blank value per context col
 
         while remaining_rows:
             chunk   = []
@@ -218,12 +222,36 @@ def paginate_blocks(all_blocks):
             if not chunk:
                 chunk = [remaining_rows[0]]   # force at least one row to avoid infinite loop
 
+            # On continuation slides, restore context to the first row so readers
+            # can see which Media Type / Media Cat / Print Mode / Spec / Result
+            # the remaining rows belong to.
+            if not first_chunk:
+                fr   = chunk[0]
+                cols = list(fr["cols"])
+                need_update = any(not cols[ci] and last_ctx[ci] for ci in range(5))
+                if need_update:
+                    new_fr = dict(fr)
+                    new_fr["cols"] = cols
+                    for ci, key in enumerate(_CTX_KEYS):
+                        if not cols[ci] and last_ctx[ci]:
+                            cols[ci]       = last_ctx[ci]
+                            new_fr[key]    = last_ctx[ci]
+                    new_fr["cols"] = cols
+                    chunk = [new_fr] + chunk[1:]
+
             heading = block["heading"] if first_chunk \
                       else block["heading"] + "  (cont.)"
 
             slides.append([{"heading": heading,
                              "rows":    chunk,
                              "cont":    not first_chunk}])
+
+            # Update last_ctx from all rows in this chunk
+            for row in chunk:
+                for ci in range(5):
+                    if row["cols"][ci]:
+                        last_ctx[ci] = row["cols"][ci]
+
             remaining_rows = remaining_rows[len(chunk):]
             first_chunk    = False
 

@@ -13,7 +13,6 @@ from services.pivot_service import PivotService
 from services.summary_service import SummaryService
 from services.storage_service import StorageService
 from services.pptx_service import generate_summary_pptx
-from engine.database_manager import DatabaseManager
 from core.Spec_Category_config import ADF_CATEGORIES, Paperpath_CATEGORIES
 from core.spec_detector import extract_year_quarter
 
@@ -153,27 +152,17 @@ class ReportPipeline:
             traceback.print_exc()
             pptx_path = None
 
-        # 9. Save to database
-        try:
-            db = DatabaseManager(
-                host="15.46.29.115",
-                user="pavithra_030226",
-                password="pavithra@030226",
-                database="quality_sandbox"
-            )
-            storage_service.save_results_to_database(
-                db=db,
-                all_pivots=all_pivots,
-                year=year,
-                quarter=quarter,
-                summary_data=summary_data
-            )
-            print(f"✓ Saved to database: Q{quarter} FY{year}")
-
-        except Exception as e:
-            print(f"⚠ Database save failed: {e}")
-            import traceback
-            traceback.print_exc()
+        # 9. Save to database (disabled)
+        # db = DatabaseManager(
+        #     host="15.46.29.115",
+        #     user="pavithra_030226",
+        #     password="pavithra@030226",
+        #     database="quality_sandbox"
+        # )
+        # storage_service.save_results_to_database(
+        #     db=db, all_pivots=all_pivots,
+        #     year=year, quarter=quarter, summary_data=summary_data
+        # )
 
         return {
             "output_path":  str(excel_path),

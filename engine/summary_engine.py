@@ -488,23 +488,35 @@ class PivotSummaryEngine:
     def _build_no_spec_error_list(self, gt_media, per_k_cols):
         """
         For categories with no spec (e.g. Other Defects, PQ):
-        - Find error columns with non-zero rates on any Grand Total row
-        - Rank by max rate descending, take top 5
+        - Find error columns with non-zero rates across all media combined
+        - Rank by overall combined rate (weighted average across all media) descending
         - For each error, list media names with non-zero rate
         - No units listed (not applicable without spec)
         """
         NO_SPEC_TOP_N = 5
         error_candidates = []
 
+        tpages_all = pd.to_numeric(
+            gt_media.get("Tpages", pd.Series(0, index=gt_media.index)),
+            errors="coerce"
+        ).fillna(0)
+        total_tpages = tpages_all.sum()
+
         for col in per_k_cols:
             if col not in gt_media.columns:
                 continue
 
             rates = pd.to_numeric(gt_media[col], errors="coerce").fillna(0)
-            max_rate = rates.max()
 
-            if max_rate <= 0:
+            if rates.sum() <= 0:
                 continue
+
+            # Overall rate = weighted average across all media by Tpages
+            if total_tpages > 0:
+                raw_counts   = rates * tpages_all / 1000
+                overall_rate = raw_counts.sum() / total_tpages * 1000
+            else:
+                overall_rate = rates.mean()
 
             # Media names with non-zero rate for this error
             failed_media_list = []
@@ -513,14 +525,14 @@ class PivotSummaryEngine:
                 for media_name in nonzero_rows["Media Name"].dropna().unique():
                     failed_media_list.append({
                         "media_name": str(media_name).strip(),
-                        "units": []   # no units for NO SPEC categories
+                        "units": []
                     })
 
             if failed_media_list:
                 error_name = col.replace("/K", "").strip()
                 error_candidates.append({
                     "error":        error_name,
-                    "rate":         round(float(max_rate), 3),
+                    "rate":         round(float(overall_rate), 3),
                     "failed_media": failed_media_list
                 })
 

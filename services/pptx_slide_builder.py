@@ -374,12 +374,15 @@ def _render_kt_grid(slide, prs, result_groups, start_y, max_width):
         col_idx = idx % 2
         row_idx = idx // 2
 
+        # If this group is alone in its grid row, expand it to full width
+        is_lone = col_idx == 0 and (idx + 1 >= len(result_groups))
+        w = max_width if is_lone else tbl_w
         x = TABLE_X + col_idx * (tbl_w + gap)
         y = grid_row_y[row_idx]
 
         # Condition label
         lbl = slide.shapes.add_textbox(
-            Inches(x), Inches(y), Inches(tbl_w), Inches(label_h))
+            Inches(x), Inches(y), Inches(w), Inches(label_h))
         lp  = lbl.text_frame.paragraphs[0]
         lr  = lp.add_run()
         lr.text      = group["test_condition"] or "Ambient"
@@ -387,7 +390,7 @@ def _render_kt_grid(slide, prs, result_groups, start_y, max_width):
         lr.font.size = Pt(7)
         lr.font.name = FONT
 
-        _draw_kt_table(slide, prs, group, x, y + label_h + KT_LABEL_GAP, tbl_w)
+        _draw_kt_table(slide, prs, group, x, y + label_h + KT_LABEL_GAP, w)
 
 
 def _draw_kt_table(slide, prs, group, x, y, width):

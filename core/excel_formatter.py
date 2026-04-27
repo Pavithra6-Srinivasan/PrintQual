@@ -1,9 +1,5 @@
 """
-Excel formatter - FIXED FOR COMBINED TABLES
-
-Fixed:
-1. Grand Total detection works with Media Name column (not Unit)
-2. Result column properly highlighted (green for PASS, red for FAIL)
+Excel formatter
 """
 
 from openpyxl.styles import Font, PatternFill
@@ -52,7 +48,6 @@ class ExcelFormatter:
                          bold_columns, data_start_row):
         """
         Bold column headings and format data rows including Grand Total rows.
-        FIXED: Always checks Media Name column for Grand Total (not Unit).
         """
         # Find indices of columns to bold
         bold_col_indices = []
@@ -109,7 +104,6 @@ class ExcelFormatter:
     def format_Result_column(self, worksheet, dataframe, data_start_row=2):
         """
         Color Result column cells: green for PASS, red for FAIL.
-        FIXED: Now properly highlights PASS/FAIL with correct capitalization.
         """
         # Find Result column index
         result_col_idx = None
@@ -136,7 +130,6 @@ class ExcelFormatter:
                                     total_column_name=None, use_relative_threshold=True):
         """
         Highlight individual error cells that contribute significantly to failures.
-        FIXED: Uses Media Name column for Grand Total detection.
         """
         highlight_fill = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")
         

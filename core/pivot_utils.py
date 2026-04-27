@@ -1,6 +1,5 @@
 import pandas as pd
 
-
 def build_groupby_columns(df, config, include_unit=False, include_media_name=False):
     """
     Dynamically build groupby columns list.
