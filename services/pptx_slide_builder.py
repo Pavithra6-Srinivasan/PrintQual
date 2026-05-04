@@ -69,7 +69,9 @@ def add_title_slide(prs, overview, printer, variant, sub_assembly, year, quarter
     project_phase = overview.get("project_phase", "")
     phase_or_quarter = project_phase if project_phase else f"Q{quarter}FY{year}"
 
-    # Line 3: join only non-empty parts
+    # Always show sub_assembly so ADF Scan / ADF Copy is unambiguous when the
+    # data was split. For non-split cases (e.g. plain "ADF") it is still shown
+    # so the slide is self-contained.
     line3 = "   ".join(p for p in [test_condition, sub_assembly, test_name] if p)
 
     add_text(title_line,
@@ -111,10 +113,20 @@ def add_overview_slide(prs, overview, summary_data, printer, variant,
     pv_lower    = product_variant.lower()
     show_product = product_variant and pv_lower not in other_text
 
+    # Skip sub_assembly if it already appears in any other part
+    sa_lower_s2   = (sub_assembly or "").lower()
+    other_no_sa   = " ".join(p for p in [
+        product_variant if show_product else "",
+        phase_or_quarter, test_condition, test_name
+    ] if p).lower()
+    show_sa_s2 = bool(sub_assembly) and sa_lower_s2 not in other_no_sa
+
     title_str = " ".join(
         p for p in [
             product_variant if show_product else "",
-            phase_or_quarter, test_condition, sub_assembly, test_name, "Summary"
+            phase_or_quarter, test_condition,
+            sub_assembly if show_sa_s2 else "",
+            test_name, "Summary"
         ]
         if p
     )
@@ -328,7 +340,7 @@ def _kt_row_heights(rows, col_w_rem):
     return heights if heights else [KT_PASS_ROW_H]
 
 
-def _kt_table_h(rows, col_w_rem=3.10):
+def _kt_table_h(rows, col_w_rem=1.35):
     return KT_HDR_H + sum(_kt_row_heights(rows, col_w_rem))
 
 
@@ -394,18 +406,25 @@ def _render_kt_grid(slide, prs, result_groups, start_y, max_width):
 
 
 def _draw_kt_table(slide, prs, group, x, y, width):
-    """Render a single Key Takeaways table at the given position."""
-    rows       = group.get("rows", [])
-    col_w_cat  = 0.80
-    col_w_res  = 0.80
-    col_w_rem  = max(0.5, width - col_w_cat - col_w_res)
-    col_widths = [col_w_cat, col_w_res, col_w_rem]
+    """Render a single Key Takeaways table at the given position.
+
+    Columns: Category | Media Type | Media Cat | Result | Remarks
+    Category cell is shown only on the first row for each category
+    (visual deduplication without actual PowerPoint cell merging).
+    """
+    rows        = group.get("rows", [])
+    col_w_cat   = 0.70
+    col_w_mtype = 1.00
+    col_w_mcat  = 0.80
+    col_w_res   = 0.65
+    col_w_rem   = max(0.5, width - col_w_cat - col_w_mtype - col_w_mcat - col_w_res)
+    col_widths  = [col_w_cat, col_w_mtype, col_w_mcat, col_w_res, col_w_rem]
 
     row_heights = _kt_row_heights(rows, col_w_rem)
     table_h     = KT_HDR_H + sum(row_heights)
 
     table = slide.shapes.add_table(
-        1 + len(rows), 3,
+        1 + len(rows), 5,
         Inches(x), Inches(y),
         Inches(width), Inches(table_h)
     ).table
@@ -419,7 +438,7 @@ def _draw_kt_table(slide, prs, group, x, y, width):
     for ri, h in enumerate(row_heights):
         table.rows[ri + 1].height = Inches(h)
 
-    for ci, hdr in enumerate(["Category", "Result", "Remarks"]):
+    for ci, hdr in enumerate(["Category", "Media Type", "Media Cat", "Result", "Remarks"]):
         cell = table.cell(0, ci)
         cell.fill.solid()
         cell.fill.fore_color.rgb = COL_BLUE
@@ -427,19 +446,38 @@ def _draw_kt_table(slide, prs, group, x, y, width):
                  size=8, align=PP_ALIGN.CENTER)
         set_border(cell)
 
+    last_cat = None
     for ri, row_info in enumerate(rows):
-        tr      = ri + 1
-        cat     = row_info["category"]
-        result  = row_info["result"]
-        remarks = row_info["remarks"]
+        tr         = ri + 1
+        cat        = row_info["category"]
+        media_type = row_info.get("media_type", "")
+        media_cat  = row_info.get("media_cat",  "")
+        result     = row_info["result"]
+        remarks    = row_info["remarks"]
+
+        # Show category name only on the first row for that category
+        display_cat = cat if cat != last_cat else ""
+        last_cat    = cat
 
         cell = table.cell(tr, 0)
         cell.fill.solid()
         cell.fill.fore_color.rgb = COL_WHITE
-        set_text(cell, cat, size=8)
+        set_text(cell, display_cat, size=8)
         set_border(cell)
 
         cell = table.cell(tr, 1)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = COL_WHITE
+        set_text(cell, media_type, size=8, align=PP_ALIGN.CENTER)
+        set_border(cell)
+
+        cell = table.cell(tr, 2)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = COL_WHITE
+        set_text(cell, media_cat, size=8, align=PP_ALIGN.CENTER)
+        set_border(cell)
+
+        cell = table.cell(tr, 3)
         cell.fill.solid()
         if result in ("PASS", "No issue"):
             cell.fill.fore_color.rgb = COL_PASS_BG
@@ -455,7 +493,7 @@ def _draw_kt_table(slide, prs, group, x, y, width):
                      size=8, align=PP_ALIGN.CENTER)
         set_border(cell)
 
-        cell = table.cell(tr, 2)
+        cell = table.cell(tr, 4)
         set_text(cell, "\n".join(remarks), size=8)
         set_border(cell)
 
@@ -464,7 +502,7 @@ def _draw_kt_table(slide, prs, group, x, y, width):
                 "slide_obj": slide,
                 "table":     table,
                 "row":       tr,
-                "col":       2,
+                "col":       4,   # remarks is now column 4
                 "cat_name":  cat,
             })
 

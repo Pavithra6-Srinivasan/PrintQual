@@ -22,7 +22,7 @@ class UnifiedPivotGenerator:
     """Generates pivot tables - OPTIMIZED."""
 
     COLUMN_ALIASES = {
-        'Test Name': ['Test Name', 'TestName', 'Test_Name', 'Test name', 'Test mode'],
+        'Test Name': ['Test Name', 'TestName', 'Test_Name', 'Test name'],
         'Program & SKU': ['Program & SKU', 'Program&SKU', 'Program_SKU'],
         'Test mode': ['Test mode', 'Test Mode'],
         'Input Tray': ['Input_Tray', 'Tray', 'Input Tray'],
@@ -31,7 +31,7 @@ class UnifiedPivotGenerator:
         'Media Name': ['Media Name'],
         'Media Cat': ['Media Cat', 'Media Category'],
         'Test Condition': ['Test Condition', 'Test conditions'],
-        'Unit': ['Unit', 'unit', 'Unit#', 'Unit No'],
+        'Unit': ['Unit', 'unit', 'Unit#', 'Unit #', 'Unit No', 'Unit Number'],
         'Tpages': ['Tpages', 'Tpages Printed', 'Actual Printed Sheets', 'Actual Run Pages', 'ADF TPages'],
         'Print Quality': ['Print Quality', 'Color/Quality']
     }
@@ -39,14 +39,22 @@ class UnifiedPivotGenerator:
     # OPTIMIZATION 2: Shared spec validator cache
     _spec_validator_cache = {}
     
-    def __init__(self, raw_data_file, test_config, spec_file_path=None, raw_data=None):
+    def __init__(self, raw_data_file, test_config, spec_file_path=None, raw_data=None,
+                 excluded_units=None, excluded_media_names=None, test_mode_filter=None):
         """
         Args:
             raw_data: Optional pre-loaded DataFrame to avoid re-reading file
+            excluded_units: iterable of unit names to drop before any calculation
+            excluded_media_names: iterable of media names to drop before any calculation
+            test_mode_filter: if set, only rows where 'Test mode' matches this value
+                              (case-insensitive) are kept
         """
         self.config = test_config
         self.spec_file_path = spec_file_path
         self.spec_validator = None
+        self._excluded_units = set(excluded_units or [])
+        self._excluded_media = set(excluded_media_names or [])
+        self._test_mode_filter = test_mode_filter
         
         # OPTIMIZATION 1: Use cached or provided raw data
         if raw_data is not None:
@@ -80,42 +88,15 @@ class UnifiedPivotGenerator:
         self.spec_sheet = detect_spec_sheet(self.raw_data, spec_file_path)
 
         result = prepare_error_columns(self.raw_data, self.config)
-        
+
         if isinstance(result, tuple) and len(result) == 2:
             self.processed_data, self.error_output_columns = result
         else:
             self.processed_data = result if isinstance(result, pd.DataFrame) else pd.DataFrame()
             self.error_output_columns = []
 
-        # Drop rows with empty Input Tray — they would produce slides with
-        # blank tray headings and cannot be meaningfully reported.
-        tray_col = next(
-            (c for c in ("Input Tray", "Input_Tray", "Tray")
-             if c in self.processed_data.columns),
-            None
-        )
-        if tray_col:
-            before = len(self.processed_data)
-            self.processed_data = self.processed_data[
-                self.processed_data[tray_col].notna() &
-                (self.processed_data[tray_col].astype(str).str.strip() != "")
-            ].reset_index(drop=True)
-            dropped = before - len(self.processed_data)
-            if dropped:
-                print(f"⚠ Dropped {dropped} rows with empty Input Tray")
-
-        # Drop duplicate columns (keep first) — duplicate column names cause
-        # groupby().agg() to receive a DataFrame instead of a Series and crash.
-        if self.processed_data.columns.duplicated().any():
-            dupes = self.processed_data.columns[self.processed_data.columns.duplicated()].tolist()
-            print(f"⚠ Dropping duplicate columns: {dupes}")
-            self.processed_data = self.processed_data.loc[
-                :, ~self.processed_data.columns.duplicated()
-            ]
-
-        self.numeric_columns = ['Tpages'] + self.error_output_columns
-        
-        # OPTIMIZATION 3: Only detect once (on first call)
+        # Detect printer info before spec validator creation (validator needs variant/sub_assembly).
+        # Reads from raw_data so can safely happen before any row filtering.
         if not hasattr(UnifiedPivotGenerator, '_detection_done'):
             self._detect_printer_info()
             UnifiedPivotGenerator._detection_done = True
@@ -127,11 +108,10 @@ class UnifiedPivotGenerator:
             self.detected_variant = UnifiedPivotGenerator._cached_variant
             self.sub_assembly = UnifiedPivotGenerator._cached_sub_assembly
 
-        # OPTIMIZATION 4: Reuse spec validator if same parameters
+        # Reuse spec validator if same parameters
         if spec_file_path and self.spec_sheet:
-            cache_key = (spec_file_path, self.spec_sheet, self.config.name, 
+            cache_key = (spec_file_path, self.spec_sheet, self.config.name,
                         self.detected_variant, self.sub_assembly)
-            
             if cache_key in self._spec_validator_cache:
                 self.spec_validator = self._spec_validator_cache[cache_key]
             else:
@@ -147,8 +127,58 @@ class UnifiedPivotGenerator:
                 except Exception as e:
                     pass  # Silently fail, validator stays None
 
-        # Expose whether the spec differentiates by Input Tray
+        # Whether the spec differentiates by Input Tray determines two things below:
+        # 1. whether blank-tray rows are dropped
+        # 2. whether the Input Tray column is kept in processed_data (and thus groupby)
         self.spec_has_tray = self.spec_validator.has_tray if self.spec_validator else True
+
+
+        # When the spec has no tray entries, remove the Input Tray column so it is
+        # not picked up by build_groupby_columns and does not appear as a table heading.
+        if not self.spec_has_tray:
+            for tray_col in ["Input Tray", "Input_Tray", "Tray"]:
+                if tray_col in self.processed_data.columns:
+                    self.processed_data = self.processed_data.drop(columns=[tray_col])
+                    break
+
+        # Apply user-requested exclusions (units / media names)
+        if self._excluded_units and "Unit" in self.processed_data.columns:
+            before = len(self.processed_data)
+            self.processed_data = self.processed_data[
+                ~self.processed_data["Unit"].astype(str).str.strip().isin(self._excluded_units)
+            ].reset_index(drop=True)
+            dropped = before - len(self.processed_data)
+            if dropped:
+                print(f"⚠ Excluded {dropped} rows for {len(self._excluded_units)} unit(s)")
+
+        if self._excluded_media and "Media Name" in self.processed_data.columns:
+            before = len(self.processed_data)
+            self.processed_data = self.processed_data[
+                ~self.processed_data["Media Name"].astype(str).str.strip().isin(self._excluded_media)
+            ].reset_index(drop=True)
+            dropped = before - len(self.processed_data)
+            if dropped:
+                print(f"⚠ Excluded {dropped} rows for {len(self._excluded_media)} media name(s)")
+
+        if self._test_mode_filter and "Test mode" in self.processed_data.columns:
+            before = len(self.processed_data)
+            self.processed_data = self.processed_data[
+                self.processed_data["Test mode"]
+                .astype(str).str.strip().str.upper()
+                == self._test_mode_filter.strip().upper()
+            ].reset_index(drop=True)
+            print(f"✓ Filtered to Test mode '{self._test_mode_filter}': {len(self.processed_data)} rows (dropped {before - len(self.processed_data)})")
+
+        # Drop duplicate columns (keep first) — duplicate column names cause
+        # groupby().agg() to receive a DataFrame instead of a Series and crash.
+        if self.processed_data.columns.duplicated().any():
+            dupes = self.processed_data.columns[self.processed_data.columns.duplicated()].tolist()
+            print(f"⚠ Dropping duplicate columns: {dupes}")
+            self.processed_data = self.processed_data.loc[
+                :, ~self.processed_data.columns.duplicated()
+            ]
+
+        self.numeric_columns = ['Tpages'] + self.error_output_columns
 
     def _detect_printer_info(self):
         """Extract printer metadata (only called once)."""
@@ -230,6 +260,8 @@ class UnifiedPivotGenerator:
                 .str.strip()
             )
             units = units[~units.str.lower().isin(["grand total", "nan"])]
+            if self._excluded_units:
+                units = units[~units.isin(self._excluded_units)]
             unit_names = sorted(units.unique())
             unit_count = len(unit_names)
 
@@ -317,7 +349,7 @@ class UnifiedPivotGenerator:
 
         pivot = pivot[final_cols]
         return pivot, groupby_cols
-    
+
     def create_combined_pivot(self):
         """Create COMBINED pivot with both Media Name AND Unit."""
         groupby_cols = build_groupby_columns(

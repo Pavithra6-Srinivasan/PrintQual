@@ -64,12 +64,19 @@ def create_widgets(app):
     button_frame.grid(row=3, column=0, columnspan=3, pady=10)
     
     app.generate_btn = ttk.Button(
-        button_frame, 
+        button_frame,
         text="Generate Report",
         command=app.generate_pivots
     )
     app.generate_btn.pack(side=tk.LEFT, padx=5)
-    
+
+    app.filter_btn = ttk.Button(
+        button_frame,
+        text="Filter & Generate",
+        command=app.filter_and_generate_pivots
+    )
+    app.filter_btn.pack(side=tk.LEFT, padx=5)
+
     app.status_label = ttk.Label(
         button_frame, 
         text="Ready", 

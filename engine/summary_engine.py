@@ -98,24 +98,34 @@ class PivotSummaryEngine:
                     if "Print Mode" in gt_tray.columns:
                         gt_tray   = gt_tray.copy()
                         unit_tray = unit_tray.copy()
-                        gt_tray["Print Mode"]   = gt_tray["Print Mode"].astype(str).str.strip().str.title()
-                        unit_tray["Print Mode"] = unit_tray["Print Mode"].astype(str).str.strip().str.title()
+                        gt_tray["Print Mode"]   = gt_tray["Print Mode"].fillna("").astype(str).str.strip().str.title()
+                        unit_tray["Print Mode"] = unit_tray["Print Mode"].fillna("").astype(str).str.strip().str.title()
 
                     if "Media Type" in gt_tray.columns:
-                        gt_tray["Media Type"]   = gt_tray["Media Type"].astype(str).str.strip().str.title()
-                        unit_tray["Media Type"] = unit_tray["Media Type"].astype(str).str.strip().str.title() \
+                        gt_tray["Media Type"]   = gt_tray["Media Type"].fillna("").astype(str).str.strip().str.title()
+                        unit_tray["Media Type"] = unit_tray["Media Type"].fillna("").astype(str).str.strip().str.title() \
                                                   if "Media Type" in unit_tray.columns else unit_tray.get("Media Type")
 
-                    # Get all print modes present for this tray
-                    modes = gt_tray["Print Mode"].dropna().unique() \
-                            if "Print Mode" in gt_tray.columns else [None]
+                    # Get all print modes present for this tray — exclude blank/nan strings
+                    if "Print Mode" in gt_tray.columns:
+                        _pm = gt_tray["Print Mode"]
+                        modes = [m for m in _pm.unique() if m and str(m).strip().lower() not in ("nan", "none", "")]
+                        if not modes:
+                            modes = [None]
+                    else:
+                        modes = [None]
 
                     for mode in sorted(modes, key=str):
                         gt_slice   = self._filter_by_mode(gt_tray, mode)
                         unit_slice = self._filter_by_mode(unit_tray, mode)
 
-                        media_types = gt_slice["Media Type"].dropna().unique() \
-                                      if "Media Type" in gt_slice.columns else []
+                        if "Media Type" in gt_slice.columns:
+                            media_types = [
+                                m for m in gt_slice["Media Type"].unique()
+                                if m and str(m).strip().lower() not in ("nan", "none", "")
+                            ]
+                        else:
+                            media_types = []
 
                         for media_type in sorted(media_types, key=str):
                             gt_mt      = gt_slice[gt_slice["Media Type"] == media_type]

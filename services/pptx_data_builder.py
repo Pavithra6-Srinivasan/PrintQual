@@ -264,14 +264,9 @@ def build_category_results(summary_data):
     """
     Build category-level pass/fail summary for the Key Takeaways table.
 
-    Returns a list of (test_condition, rows) tuples — one entry per unique
-    test condition found in the data. For Ambient there will be one entry;
-    for Climatic there will be one entry per climatic condition value.
-
-    Categories are treated as "has spec" only if at least one media summary
-    for that (tc, category) returned a result other than NO SPEC / NO SPEC
-    PROVIDED.  This is determined by a pre-scan so the logic is product-
-    agnostic — no hardcoded category names needed.
+    Returns one entry per unique test condition. Each entry's rows are split
+    by (category, media_type, media_cat) so the table shows one row per
+    media type / media cat combination within each category.
     """
     NO_SPEC_RESULTS = {"NO SPEC", "NO SPEC PROVIDED"}
 
@@ -288,7 +283,7 @@ def build_category_results(summary_data):
             elif key not in has_spec:
                 has_spec[key] = False
 
-    # tc_map: {test_condition: {category: {result, remarks}}}
+    # tc_map: {tc: {cat_name: {(media_type, media_cat): {result, remarks}}}}
     tc_map = {}
 
     for cat in summary_data["categories"]:
@@ -298,62 +293,65 @@ def build_category_results(summary_data):
             tc         = m.get("test_condition", "")
             tray       = str(m.get("tray", ""))
             mode       = str(m.get("mode", ""))
-            media_type = m.get("media_type", "")
-            media_cat  = m.get("media_cat", "")
+            media_type = m.get("media_type", "") or ""
+            media_cat  = m.get("media_cat",  "") or ""
             result     = m.get("overall_result", "")
             spec_val   = m.get("spec", None)
             spec_str   = f"{spec_val:.2f}" if spec_val is not None else "N/A"
             errors     = m.get("errors", [])
 
             cat_has_spec = has_spec.get((tc, cat_name), False)
+            mc_key       = (media_type, media_cat)
 
             if tc not in tc_map:
                 tc_map[tc] = {}
             if cat_name not in tc_map[tc]:
+                tc_map[tc][cat_name] = {}
+            if mc_key not in tc_map[tc][cat_name]:
                 default_result = "PASS" if cat_has_spec else "No issue"
-                tc_map[tc][cat_name] = {"result": default_result, "remarks": []}
+                tc_map[tc][cat_name][mc_key] = {"result": default_result, "remarks": []}
 
-            mt_label = f"{media_type}_{media_cat}" if media_cat else media_type
+            entry = tc_map[tc][cat_name][mc_key]
+
+            # Context prefix: show tray + mode only when they are meaningful
+            ctx_parts  = [p for p in [tray, mode] if p]
+            ctx_prefix = f"[{', '.join(ctx_parts)}] " if ctx_parts else ""
 
             if cat_has_spec:
-                # Spec-based category: PASS / FAIL
                 if result == "FAIL":
-                    tc_map[tc][cat_name]["result"] = "FAIL"
+                    entry["result"] = "FAIL"
                     for err in errors:
                         error  = err.get("error", "")
                         rate   = err.get("rate", 0)
-                        remark = (
-                            f"{mt_label}_{tray}_{mode}_"
-                            f"{error} error rate of {rate:.2f}/K "
-                            f"(Spec: {spec_str}/K)"
-                        )
-                        if remark not in tc_map[tc][cat_name]["remarks"]:
-                            tc_map[tc][cat_name]["remarks"].append(remark)
+                        remark = f"{ctx_prefix}{error}: {rate:.2f}/K (Spec: {spec_str}/K)"
+                        if remark not in entry["remarks"]:
+                            entry["remarks"].append(remark)
             else:
-                # No-spec category: No issue / With observation
-                if result not in NO_SPEC_RESULTS:
-                    # Unexpected spec result in a no-spec category — treat conservatively
-                    pass
                 if errors:
-                    if tc_map[tc][cat_name]["result"] != "With observation":
-                        tc_map[tc][cat_name]["result"] = "With observation"
+                    if entry["result"] != "With observation":
+                        entry["result"] = "With observation"
                     for err in errors:
-                        error = err.get("error", "")
-                        rate  = err.get("rate", 0)
-                        remark = (
-                            f"{mt_label}_{tray}_{mode}_"
-                            f"{error} error rate of {rate:.2f}/K"
-                        )
-                        if remark not in tc_map[tc][cat_name]["remarks"]:
-                            tc_map[tc][cat_name]["remarks"].append(remark)
+                        error  = err.get("error", "")
+                        rate   = err.get("rate", 0)
+                        remark = f"{ctx_prefix}{error}: {rate:.2f}/K"
+                        if remark not in entry["remarks"]:
+                            entry["remarks"].append(remark)
 
     result_groups = []
     for tc in sorted(tc_map.keys()):
         cat_map = tc_map[tc]
-        rows = [
-            {"category": k, "result": v["result"], "remarks": v["remarks"]}
-            for k, v in sorted(cat_map.items(), key=lambda x: _cat_sort_key(x[0]))
-        ]
+        rows    = []
+        for cat_name in sorted(cat_map.keys(), key=_cat_sort_key):
+            mc_map = cat_map[cat_name]
+            for (mt, mc) in sorted(mc_map.keys()):
+                v = mc_map[(mt, mc)]
+                rows.append({
+                    "category":   cat_name,
+                    "media_type": mt,
+                    "media_cat":  mc,
+                    "result":     v["result"],
+                    "remarks":    v["remarks"],
+                })
         result_groups.append({"test_condition": tc, "rows": rows})
 
     return result_groups

@@ -3,15 +3,27 @@ import pandas as pd
 def standardize_column_names(df, column_aliases):
     """
     Rename columns in df using provided dictionary.
+    Strips whitespace from all column names first, then tries
+    exact match followed by case-insensitive match.
     """
     df = df.copy()
-    
-    rename_map = {}
+    # Strip leading/trailing whitespace from every column name
+    df.columns = [str(c).strip() for c in df.columns]
 
+    # Build a case-insensitive lookup of current column names
+    col_lower_map = {str(c).lower(): c for c in df.columns}
+
+    rename_map = {}
     for standard_name, aliases in column_aliases.items():
         for alias in aliases:
+            # 1. Exact match
             if alias in df.columns:
                 rename_map[alias] = standard_name
+                break
+            # 2. Case-insensitive match
+            if alias.lower() in col_lower_map:
+                rename_map[col_lower_map[alias.lower()]] = standard_name
+                break
 
     df.rename(columns=rename_map, inplace=True)
     return df

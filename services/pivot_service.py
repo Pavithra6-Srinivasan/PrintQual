@@ -12,11 +12,15 @@ from core.Spec_Category_config import Paperpath_CATEGORIES
 
 class PivotService:
 
-    def __init__(self, raw_file, spec_file):
+    def __init__(self, raw_file, spec_file, excluded_units=None, excluded_media_names=None,
+                 test_mode_filter=None):
         self.raw_file = raw_file
         self.spec_file = spec_file
         self._first_gen = None
         self._first_config = None
+        self.excluded_units = excluded_units or []
+        self.excluded_media_names = excluded_media_names or []
+        self.test_mode_filter = test_mode_filter
 
     def detect_test_type(self):
         """Detect test type and cache first generator."""
@@ -24,7 +28,10 @@ class PivotService:
         self._first_gen = UnifiedPivotGenerator(
             self.raw_file,
             self._first_config,
-            self.spec_file
+            self.spec_file,
+            excluded_units=self.excluded_units,
+            excluded_media_names=self.excluded_media_names,
+            test_mode_filter=self.test_mode_filter
         )
         
         # Print detection info once
@@ -57,7 +64,10 @@ class PivotService:
                 generator = UnifiedPivotGenerator(
                     self.raw_file,
                     config,
-                    self.spec_file
+                    self.spec_file,
+                    excluded_units=self.excluded_units,
+                    excluded_media_names=self.excluded_media_names,
+                    test_mode_filter=self.test_mode_filter
                 )
 
             combined_pivot = generator.create_combined_pivot()

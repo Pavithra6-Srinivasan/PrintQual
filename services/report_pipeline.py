@@ -4,6 +4,10 @@ report_pipeline.py - WITH POWERPOINT SUMMARY
 Generates:
   1. Excel file  — pivot sheets for debugging
   2. PowerPoint  — summary slides (one slide per Input Tray / Print Mode combo)
+
+For ADF sub-assemblies where the raw data contains both 'ADF' (Scan) and
+'ADF COPY' entries in the 'Test mode' column, the pipeline automatically
+generates two separate sets of reports — one per mode.
 """
 
 import os
@@ -17,58 +21,122 @@ from core.Spec_Category_config import ADF_CATEGORIES, Paperpath_CATEGORIES
 from core.spec_detector import extract_year_quarter
 
 
+# Mapping from raw Test mode value (upper-cased) → human label used in filenames/titles
+_ADF_MODE_MAP = {
+    "ADF":      "ADF Scan",
+    "ADF COPY": "ADF Copy",
+}
+
+
 class ReportPipeline:
 
-    def run(self, raw_file, spec_file, output_folder):
+    def run(self, raw_file, spec_file, output_folder,
+            excluded_units=None, excluded_media_names=None):
         """
-        Complete pipeline for generating pivot report + summary PowerPoint.
+        Entry point.  Detects whether an ADF split is required and runs
+        _run_single() once (normal) or twice (ADF Scan + ADF Copy).
 
-        Args:
-            raw_file      : Path to raw data Excel file
-            spec_file     : Path to spec Excel file (optional)
-            output_folder : Path to output folder
+        Returns a list of result dicts — one per report generated.
+        """
+        # Initial detection pass — also populates _RAW_DATA_CACHE
+        _init_service = PivotService(raw_file, spec_file,
+                                     excluded_units=excluded_units,
+                                     excluded_media_names=excluded_media_names)
+        sub_assembly, _, _, _, _ = _init_service.detect_test_type()
 
-        Returns:
-            dict with result info
+        run_modes = self._detect_run_modes(raw_file, sub_assembly)
+
+        results = []
+        for mode_filter, mode_label in run_modes:
+            result = self._run_single(
+                raw_file=raw_file,
+                spec_file=spec_file,
+                output_folder=output_folder,
+                excluded_units=excluded_units,
+                excluded_media_names=excluded_media_names,
+                test_mode_filter=mode_filter,
+                mode_label=mode_label,
+            )
+            results.append(result)
+
+        return results
+
+    # ── Split detection ───────────────────────────────────────────────────────
+
+    def _detect_run_modes(self, raw_file, sub_assembly):
+        """
+        Returns a list of (filter_value, label) pairs.
+        Single-element [(None, None)] when no split is needed.
+        Two elements when ADF Scan + ADF Copy are both present.
+        """
+        if sub_assembly != "ADF":
+            return [(None, None)]
+
+        from core.pivot_generator import _RAW_DATA_CACHE
+        raw_df = _RAW_DATA_CACHE.get(raw_file)
+        if raw_df is None or "Test mode" not in raw_df.columns:
+            return [(None, None)]
+
+        modes_present = set(
+            raw_df["Test mode"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .unique()
+        )
+
+        split_modes = [k for k in _ADF_MODE_MAP if k in modes_present]
+        if len(split_modes) == len(_ADF_MODE_MAP):
+            print(f"✓ ADF split detected — generating {len(split_modes)} reports")
+            return [(k, _ADF_MODE_MAP[k]) for k in _ADF_MODE_MAP]
+
+        return [(None, None)]
+
+    # ── Single-mode pipeline ──────────────────────────────────────────────────
+
+    def _run_single(self, raw_file, spec_file, output_folder,
+                    excluded_units, excluded_media_names,
+                    test_mode_filter, mode_label):
+        """
+        Full pipeline for one report.
+
+        mode_label (e.g. 'ADF Scan' / 'ADF Copy') is incorporated into
+        the output filename and passed as sub_assembly to the PPTX builder
+        so slide titles reflect the correct mode.  None when no split.
         """
 
         # 1. Detect test type
-        pivot_service = PivotService(raw_file, spec_file)
+        pivot_service = PivotService(
+            raw_file, spec_file,
+            excluded_units=excluded_units,
+            excluded_media_names=excluded_media_names,
+            test_mode_filter=test_mode_filter,
+        )
         sub_assembly, printer, variant, spec_sheet, overview = pivot_service.detect_test_type()
+        if mode_label:
+            print(f"\n── Generating: {mode_label} ──")
 
         # 2. Select appropriate categories
-        if sub_assembly == "ADF":
-            categories = ADF_CATEGORIES
-        else:
-            categories = Paperpath_CATEGORIES
+        categories = ADF_CATEGORIES if sub_assembly == "ADF" else Paperpath_CATEGORIES
 
         # 3. Generate all pivots
         all_pivots = pivot_service.generate_all_pivots(categories)
 
-        # Extract all unit names from raw pivot data
+        # Extract unit names from pivot data
         try:
             units = set()
-
             for cat in all_pivots.values():
                 df = cat["combined"]
-
                 if "Unit" in df.columns:
                     unit_vals = df["Unit"].astype(str).str.strip()
-
-                    unit_vals = unit_vals[
-                        unit_vals.str.lower() != "grand total"
-                    ]
-
+                    unit_vals = unit_vals[~unit_vals.str.lower().isin(["grand total", "nan", ""])]
                     units.update(unit_vals.tolist())
-
             overview["unit_names"] = sorted(units)
-
         except Exception as e:
             print(f"⚠ Could not extract unit names: {e}")
 
-        # 3b. Compute actual_life from Grand Total rows in combined pivots.
-        #     raw_data Tpages has one row per print event (not accumulated),
-        #     so we must use the pivot Grand Total rows where Tpages is summed.
+        # Compute actual_life from Grand Total rows
         try:
             import pandas as pd
             total_tpages = 0.0
@@ -81,7 +149,7 @@ class ReportPipeline:
                         df.loc[gt_mask, "Tpages"], errors="coerce"
                     ).fillna(0).sum()
                     total_tpages += gt_tpages
-                    break   # one category is enough — Tpages totals are the same
+                    break
             if unit_count > 0 and total_tpages > 0:
                 overview["actual_life"] = int(round(total_tpages / unit_count, 0))
                 print(f"✓ Actual test life per unit: {overview['actual_life']:,} pages")
@@ -99,28 +167,29 @@ class ReportPipeline:
             print(f"✓ Detected from filename: Q{quarter} FY{year}")
         except Exception as e:
             print(f"⚠ Could not detect year/quarter from filename: {e}")
-            print("  Using current date as fallback")
             now = datetime.now()
             year = now.year
             quarter = (now.month - 1) // 3 + 1
             print(f"  Fallback: Q{quarter} {year}")
 
-        # 6. Build output paths — save directly to user-selected folder
+        # 6. Build output paths
         from utils.paths import default_output_dir
         output_dir = Path(output_folder) if output_folder else default_output_dir()
         output_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
-        name_parts = [p for p in [printer, variant, sub_assembly] if p]
+        # Use mode_label in filename when split (e.g. "ADF Scan" → "ADF_Scan")
+        sa_name    = mode_label.replace(" ", "_") if mode_label else sub_assembly
+        name_parts = [p for p in [printer, variant, sa_name] if p]
         phase_part = overview.get("project_phase", "") or f"Q{quarter}FY{year}"
         name_parts.append(phase_part)
-        base_name  = "_".join(name_parts)
+        base_name       = "_".join(name_parts)
         excel_filename  = f"{base_name}_Report_{timestamp}.xlsx"
         pptx_filename   = f"{base_name}_Summary_{timestamp}.pptx"
         excel_path      = output_dir / excel_filename
         pptx_path       = output_dir / pptx_filename
 
-        # 7. Save Excel (pivot sheets only — no summary sheet)
+        # 7. Save Excel
         storage_service = StorageService()
         storage_service.save_full_report(
             output_path=str(excel_path),
@@ -128,19 +197,20 @@ class ReportPipeline:
             all_pivots=all_pivots
         )
 
-        # 8. Save PowerPoint summary
+        # 8. Save PowerPoint
+        # Pass mode_label as sub_assembly so slide titles say "ADF Scan" / "ADF Copy"
+        pptx_sub_assembly = mode_label if mode_label else sub_assembly
         try:
             generate_summary_pptx(
                 output_path=str(pptx_path),
                 summary_data=summary_data,
                 printer=printer,
                 variant=variant,
-                sub_assembly=sub_assembly,
+                sub_assembly=pptx_sub_assembly,
                 year=year,
                 quarter=quarter,
                 overview=overview
             )
-            # Auto-open the PowerPoint on Windows
             try:
                 os.startfile(str(pptx_path))
                 print(f"✓ PowerPoint opened automatically")
@@ -152,24 +222,13 @@ class ReportPipeline:
             traceback.print_exc()
             pptx_path = None
 
-        # 9. Save to database (disabled)
-        # db = DatabaseManager(
-        #     host="15.46.29.115",
-        #     user="pavithra_030226",
-        #     password="pavithra@030226",
-        #     database="quality_sandbox"
-        # )
-        # storage_service.save_results_to_database(
-        #     db=db, all_pivots=all_pivots,
-        #     year=year, quarter=quarter, summary_data=summary_data
-        # )
-
         return {
             "output_path":  str(excel_path),
             "pptx_path":    str(pptx_path) if pptx_path else None,
             "printer":      printer,
             "variant":      variant,
-            "sub_assembly": sub_assembly,
+            "sub_assembly": pptx_sub_assembly,
+            "mode_label":   mode_label,
             "summary_text": summary_text,
             "year":         year,
             "quarter":      quarter

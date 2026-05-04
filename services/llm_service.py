@@ -2,8 +2,8 @@ import requests
 
 class LLMService:
     def __init__(self):
-        self.url = "http://localhost:11434/api/generate"
-        self.model = "qwen2.5"
+        self.url = "http://DESKTOP-TE4J5GB:11434/api/generate"
+        self.model = "gemma4:26b"
         self.chat_history = []
 
     def ask(self, system_prompt, user_message, timeout=200):

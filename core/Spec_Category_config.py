@@ -115,15 +115,13 @@ SOFT_ERROR_CONFIG = SpecCategoryConfig(
         'Margin Shift_Down_S1': 'Margin Shift_Down_S1',
         'Margin Shift_Left_S1': 'Margin Shift_Left_S1',
         'Margin Shift_Right_S1': 'Margin Shift_Right_S1',
-        'Margin Shift_Up_S2': 'Margin Shift_Up_S2',
-        'Margin Shift_Down_S2': 'Margin Shift_Down_S2',
+        'Margin Shift_Up_S2': ['Margin Shift_Up_S2', 'Margin Shift up_S1'],
+        'Margin Shift_Down_S2': ['Margin Shift_Down_S2', 'Margin Shift down_S2'],
         'Margin Shift_Left_S2': 'Margin Shift_Left_S2',
         'Margin Shift_Right_S2': 'Margin Shift_Right_S2',
         'Obvious Skew_S1': 'Obvious Skew_S1',
         'Obvious Skew_S2': 'Obvious Skew_S2',
-        'Missing Bottom Line_S1': 'Missing Bottom Line_S1',
-        'Margin Shift up_S1': 'Margin Shift up_S1',
-        'Margin Shift down_S2': 'Margin Shift down_S2'
+        'Missing Bottom Line_S1': 'Missing Bottom Line_S1'
     },
     total_column_name="Sum of Total Soft Error"
 )
@@ -180,8 +178,7 @@ OTHER_DEFECTS_CONFIG = SpecCategoryConfig(
         'Auto Job Cancel': 'Auto Job Cancel',
         'Auto Power Cycle': 'Auto Power Cycle',
         'Paper out of order': 'Paper out of order',
-        'Cartridges Problem _S1': 'Cartridges Problem _S1',
-        'Cartridges Problem _S2': 'Cartridges Problem _S2'
+        'Cartridges Problem': ['Cartridges Problem _S1', 'Cartridges Problem _S2']
     },
     total_column_name="Sum of Total Other Defects"
 )
