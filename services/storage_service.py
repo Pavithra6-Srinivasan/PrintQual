@@ -82,13 +82,16 @@ class StorageService:
             )
 
             # Reverse-compute raw counts from /K rates for weighted averages
+            denom_col = getattr(config, 'denominator_column', 'Tpages')
+            if denom_col not in unit_df.columns:
+                denom_col = 'Tpages'
             per_k_cols = [
                 c for c in unit_df.columns
                 if str(c).endswith("/K") and c != config.total_column_name
             ]
             per_k_info = []
             tpages_s = pd.to_numeric(
-                unit_df.get("Tpages", pd.Series(0, index=unit_df.index)),
+                unit_df.get(denom_col, pd.Series(0, index=unit_df.index)),
                 errors="coerce"
             ).fillna(0)
             for i, k_col in enumerate(per_k_cols):
@@ -112,17 +115,17 @@ class StorageService:
 
             # ── Sheet 1: Media Name (aggregated across units) ─────────────
             if "Media Name" in unit_df.columns:
-                media_df = self._aggregate_by_media(unit_df, per_k_info, total_col)
+                media_df = self._aggregate_by_media(unit_df, per_k_info, total_col, denom_col)
                 df, flags = self._build_table(
-                    media_df, "Media Name", per_k_info, total_col, has_spec
+                    media_df, "Media Name", per_k_info, total_col, has_spec, denom_col=denom_col
                 )
                 media_sheets[category_name[:31]] = (df, flags)
 
             # ── Sheet 2: By Unit (aggregated across media names) ──────────
             if "Unit" in unit_df.columns and not unit_df_filt.empty:
-                unit_agg = self._aggregate_by_unit(unit_df_filt, per_k_info, total_col)
+                unit_agg = self._aggregate_by_unit(unit_df_filt, per_k_info, total_col, denom_col)
                 df, flags = self._build_table(
-                    unit_agg, "Unit", per_k_info, total_col, has_spec
+                    unit_agg, "Unit", per_k_info, total_col, has_spec, denom_col=denom_col
                 )
                 unit_sheets[f"{category_name} by Unit"[:31]] = (df, flags)
 
@@ -131,7 +134,7 @@ class StorageService:
                     and not unit_df_filt.empty):
                 df, flags = self._build_table(
                     unit_df_filt, "Unit", per_k_info, total_col, has_spec,
-                    additional_dim_cols=["Media Name"]
+                    additional_dim_cols=["Media Name"], denom_col=denom_col
                 )
                 detail_sheets[f"{category_name} Detail"[:31]] = (df, flags)
 
@@ -175,22 +178,24 @@ class StorageService:
 
     # -------------------------------------------------------------------------
 
-    def _aggregate_by_media(self, unit_df, per_k_info, total_col=None):
+    def _aggregate_by_media(self, unit_df, per_k_info, total_col=None, denom_col='Tpages'):
         """
         Collapse Unit so each Media Name appears once per dimension group.
-        Tpages and raw counts summed; Spec Limit = first valid; Result = FAIL if any.
+        Denominator and raw counts summed; Spec Limit = first valid; Result = FAIL if any.
         """
         if "Unit" not in unit_df.columns:
             return unit_df
 
         raw_names = {rn for _, rn in per_k_info}
         k_names   = {kn for kn, _ in per_k_info}
-        exclude   = {"Unit", "Tpages"} | raw_names | k_names | {"Spec Limit", "Result"}
+        exclude   = {"Unit", denom_col} | raw_names | k_names | {"Spec Limit", "Result"}
         if total_col:
             exclude.add(total_col)
         group_cols = [c for c in unit_df.columns if c not in exclude]
 
-        agg_dict = {"Tpages": "sum"}
+        agg_dict = {}
+        if denom_col in unit_df.columns:
+            agg_dict[denom_col] = "sum"
         for rn in raw_names:
             if rn in unit_df.columns:
                 agg_dict[rn] = "sum"
@@ -213,19 +218,21 @@ class StorageService:
 
     # -------------------------------------------------------------------------
 
-    def _aggregate_by_unit(self, unit_df, per_k_info, total_col=None):
+    def _aggregate_by_unit(self, unit_df, per_k_info, total_col=None, denom_col='Tpages'):
         """
         Collapse Media Name so each Unit appears once per dimension group.
-        Tpages and raw counts summed; Spec Limit = first valid; Result = FAIL if any.
+        Denominator and raw counts summed; Spec Limit = first valid; Result = FAIL if any.
         """
         raw_names = {rn for _, rn in per_k_info}
         k_names   = {kn for kn, _ in per_k_info}
-        exclude   = {"Media Name", "Tpages"} | raw_names | k_names | {"Spec Limit", "Result"}
+        exclude   = {"Media Name", denom_col} | raw_names | k_names | {"Spec Limit", "Result"}
         if total_col:
             exclude.add(total_col)
         group_cols = [c for c in unit_df.columns if c not in exclude]
 
-        agg_dict = {"Tpages": "sum"}
+        agg_dict = {}
+        if denom_col in unit_df.columns:
+            agg_dict[denom_col] = "sum"
         for rn in raw_names:
             if rn in unit_df.columns:
                 agg_dict[rn] = "sum"
@@ -249,12 +256,12 @@ class StorageService:
     # -------------------------------------------------------------------------
 
     def _build_table(self, unit_df, leaf_col, per_k_info, total_col, has_spec,
-                     additional_dim_cols=None):
+                     additional_dim_cols=None, denom_col='Tpages'):
         """
         Build the display DataFrame for one sheet.
 
         For each dimension group one Total row is written first (weighted-avg
-        /K rates, summed Tpages) followed by individual leaf rows with dim
+        /K rates, summed denominator) followed by individual leaf rows with dim
         values repeated on every row.  additional_dim_cols adds extra columns
         (e.g. "Media Name") to the grouping for the Detail sheet.
         """
@@ -267,7 +274,7 @@ class StorageService:
 
         k_col_names = [k for k, _ in per_k_info]
 
-        out_cols = dim_cols + [leaf_col, "Tpages"] + k_col_names
+        out_cols = dim_cols + [leaf_col, denom_col] + k_col_names
         if per_k_info:
             out_cols.append(total_col)
         if "Spec Limit" in unit_df.columns:
@@ -290,15 +297,16 @@ class StorageService:
             else:
                 dim_vals = {}
 
-            tp_sum = pd.to_numeric(grp["Tpages"], errors="coerce").fillna(0).sum()
+            tp_sum = pd.to_numeric(grp[denom_col], errors="coerce").fillna(0).sum() \
+                     if denom_col in grp.columns else 0.0
 
             # ── Detail rows (dim values repeated on every row) ───────────
             for _, r in grp.iterrows():
                 dr = {c: dim_vals.get(c, "") for c in dim_cols}
                 dr[leaf_col] = r.get(leaf_col, "")
 
-                tp = pd.to_numeric(r.get("Tpages", 0), errors="coerce") or 0
-                dr["Tpages"] = int(tp) if tp else ""
+                tp = pd.to_numeric(r.get(denom_col, 0), errors="coerce") or 0
+                dr[denom_col] = int(tp) if tp else ""
 
                 for k_col, rn in per_k_info:
                     rv = pd.to_numeric(r.get(rn, 0), errors="coerce") or 0
@@ -329,7 +337,7 @@ class StorageService:
 
             # ── Total row at bottom of group ─────────────────────────────
             tr = {**dim_vals, leaf_col: "Total"}
-            tr["Tpages"] = int(round(tp_sum)) if tp_sum else 0
+            tr[denom_col] = int(round(tp_sum)) if tp_sum else 0
 
             for k_col, rn in per_k_info:
                 rs = pd.to_numeric(grp[rn], errors="coerce").fillna(0).sum()

@@ -2,6 +2,10 @@
 
 import pandas as pd
 
+# Cache raw spec DataFrames so each (file, sheet) is read only once per session.
+_SPEC_FILE_CACHE: dict = {}
+
+
 class SpecValidator:
     def __init__(self, spec_file_path, sheet_name, spec_category,
              product=None, sub_assembly=None):
@@ -32,7 +36,11 @@ class SpecValidator:
 
     # LOAD SPEC SHEET
     def load_specs(self):
-        df = pd.read_excel(self.spec_file_path, sheet_name=self.sheet_name)
+        cache_key = (self.spec_file_path, self.sheet_name)
+        if cache_key not in _SPEC_FILE_CACHE:
+            raw = pd.read_excel(self.spec_file_path, sheet_name=self.sheet_name)
+            _SPEC_FILE_CACHE[cache_key] = raw
+        df = _SPEC_FILE_CACHE[cache_key]
 
         if "Spec Category" not in df.columns:
             raise ValueError("Spec file missing 'Spec Category' column")
@@ -142,8 +150,22 @@ class SpecValidator:
 
         return False
 
+    # Columns that must be explicitly filled in the matched spec row for a spec to apply.
+    # Input Tray is intentionally excluded — blank there means "applies to all trays".
+    _REQUIRED_SPEC_COLS = ["Test Condition", "Media Type", "Media Cat", "Print Mode"]
+
+    def _required_cols_filled(self, spec_row):
+        """Return False if any required spec column is blank in the matched row."""
+        for col in self._REQUIRED_SPEC_COLS:
+            if col not in self.spec_df.columns:
+                continue
+            val = spec_row.get(col)
+            if pd.isna(val) or str(val).strip() == "":
+                return False
+        return True
+
     # COLUMN-BY-COLUMN ELIMINATION
-    def find_best_spec_row(self, context):
+    def find_best_spec_row(self, context, _debug=False):
         df = self.spec_df.copy()
 
         priority_order = [
@@ -178,6 +200,13 @@ class SpecValidator:
                 df = explicit_rows.reset_index(drop=True)
             elif not wildcard_rows.empty:
                 df = wildcard_rows.reset_index(drop=True)
+            else:
+                if _debug:
+                    print(f"  [SPEC FAIL] Column '{col}': context='{pivot_value}' — "
+                          f"no explicit or wildcard match among {len(df)} remaining rows. "
+                          f"Spec values: {df[col].tolist()}")
+                df = pd.DataFrame()
+                break
 
             if len(df) == 1:
                 break
@@ -188,7 +217,26 @@ class SpecValidator:
         if len(df) > 1:
             df = self._prefer_general_row(df, priority_order)
 
-        return df.iloc[0]
+        best_row = df.iloc[0]
+        if not self._required_cols_filled(best_row):
+            if _debug:
+                print(f"  [SPEC FAIL] Matched row rejected by _required_cols_filled. "
+                      f"Row: { {c: best_row.get(c) for c in self._REQUIRED_SPEC_COLS} }")
+            return None
+        return best_row
+
+    def debug_match(self, pivot_row, total_per_k_col):
+        """Call this instead of evaluate() to trace why a spec is not found."""
+        context = self.extract_test_context(pivot_row)
+        print(f"\n[SPEC DEBUG] Context: {context}")
+        print(f"  product={self.product!r}  sub_assembly={self.sub_assembly!r}")
+        print(f"  Spec sheet has {len(self.spec_df)} rows for category '{self.spec_category}'")
+        result = self.find_best_spec_row(context, _debug=True)
+        if result is None:
+            print("  => RESULT: no spec row found")
+        else:
+            print(f"  => RESULT: matched row — {dict(result)}")
+        return result
 
     # COLUMN-BY-COLUMN ELIMINATION (continued)
     def _prefer_general_row(self, df, priority_order):

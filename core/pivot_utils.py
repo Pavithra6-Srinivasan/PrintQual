@@ -28,12 +28,12 @@ def build_groupby_columns(df, config, include_unit=False, include_media_name=Fal
     return groupby_cols
 
 
-def calculate_per_k_rates(pivot, error_cols):
+def calculate_per_k_rates(pivot, error_cols, denom_col='Tpages'):
     """
     Calculate error per-K rates.
     """
     for col in error_cols:
-        pivot[f"{col}/K"] = ((pivot[col] / pivot['Tpages']) * 1000).round(3)
+        pivot[f"{col}/K"] = ((pivot[col] / pivot[denom_col]) * 1000).round(3)
 
     return pivot
 

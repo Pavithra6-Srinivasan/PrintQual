@@ -110,12 +110,13 @@ def build_flat_rows(summary_data, tray, cat_name, test_condition=""):
             spec_str = f"{spec_val:.2f}/K" if spec_val is not None else ""
 
             if result not in ("FAIL", "NO SPEC", "PASS") or not errors:
+                result_display = result if (result != "NO SPEC" or not spec_str) else "PASS"
                 rows.append(_flat(
                     mt if first_media_row else "",
                     mc if first_mc_row    else "",
                     mode,
                     spec_str,
-                    result, "", "", ""
+                    result_display, "", "", ""
                 ))
                 first_media_row = False
                 first_mc_row    = False
@@ -283,7 +284,8 @@ def build_category_results(summary_data):
             elif key not in has_spec:
                 has_spec[key] = False
 
-    # tc_map: {tc: {cat_name: {(media_type, media_cat): {result, remarks}}}}
+    # tc_map: {tc: {cat_name: {result, remarks}}} — one entry per category
+    _RESULT_RANK = {"FAIL": 2, "With observation": 1, "Observation": 1, "PASS": 0, "No issue": 0}
     tc_map = {}
 
     for cat in summary_data["categories"]:
@@ -293,33 +295,41 @@ def build_category_results(summary_data):
             tc         = m.get("test_condition", "")
             tray       = str(m.get("tray", ""))
             mode       = str(m.get("mode", ""))
-            media_type = m.get("media_type", "") or ""
-            media_cat  = m.get("media_cat",  "") or ""
             result     = m.get("overall_result", "")
             spec_val   = m.get("spec", None)
             spec_str   = f"{spec_val:.2f}" if spec_val is not None else "N/A"
             errors     = m.get("errors", [])
+            media_type = m.get("media_type", "")
+            media_cat  = m.get("media_cat", "")
 
             cat_has_spec = has_spec.get((tc, cat_name), False)
-            mc_key       = (media_type, media_cat)
+
+            mc_key = (media_type, media_cat)
 
             if tc not in tc_map:
                 tc_map[tc] = {}
             if cat_name not in tc_map[tc]:
-                tc_map[tc][cat_name] = {}
-            if mc_key not in tc_map[tc][cat_name]:
                 default_result = "PASS" if cat_has_spec else "No issue"
-                tc_map[tc][cat_name][mc_key] = {"result": default_result, "remarks": []}
+                tc_map[tc][cat_name] = {"result": default_result, "remarks": [], "combo_pass": {}}
 
-            entry = tc_map[tc][cat_name][mc_key]
+            entry  = tc_map[tc][cat_name]
+            combos = entry["combo_pass"]
 
-            # Context prefix: show tray + mode only when they are meaningful
+            # Track per-combo pass status (False once any FAIL seen)
+            if mc_key not in combos:
+                combos[mc_key] = True
+            if result == "FAIL":
+                combos[mc_key] = False
+
+            # Promote overall result to worst seen
+            if _RESULT_RANK.get(result, 0) > _RESULT_RANK.get(entry["result"], 0):
+                entry["result"] = result
+
             ctx_parts  = [p for p in [tray, mode] if p]
-            ctx_prefix = f"[{', '.join(ctx_parts)}] " if ctx_parts else ""
+            ctx_prefix = "_".join(ctx_parts) + "_" if ctx_parts else ""
 
             if cat_has_spec:
                 if result == "FAIL":
-                    entry["result"] = "FAIL"
                     for err in errors:
                         error  = err.get("error", "")
                         rate   = err.get("rate", 0)
@@ -328,8 +338,6 @@ def build_category_results(summary_data):
                             entry["remarks"].append(remark)
             else:
                 if errors:
-                    if entry["result"] != "With observation":
-                        entry["result"] = "With observation"
                     for err in errors:
                         error  = err.get("error", "")
                         rate   = err.get("rate", 0)
@@ -342,16 +350,20 @@ def build_category_results(summary_data):
         cat_map = tc_map[tc]
         rows    = []
         for cat_name in sorted(cat_map.keys(), key=_cat_sort_key):
-            mc_map = cat_map[cat_name]
-            for (mt, mc) in sorted(mc_map.keys()):
-                v = mc_map[(mt, mc)]
-                rows.append({
-                    "category":   cat_name,
-                    "media_type": mt,
-                    "media_cat":  mc,
-                    "result":     v["result"],
-                    "remarks":    v["remarks"],
-                })
+            v       = cat_map[cat_name]
+            overall = v["result"]
+
+            if overall == "FAIL" or v["remarks"]:
+                display_result = "With observation"
+            else:
+                display_result = "No issue"
+
+            rows.append({
+                "category":     cat_name,
+                "result":       display_result,
+                "result_style": display_result,
+                "remarks":      v["remarks"],
+            })
         result_groups.append({"test_condition": tc, "rows": rows})
 
     return result_groups

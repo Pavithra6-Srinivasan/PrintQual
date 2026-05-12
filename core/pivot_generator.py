@@ -14,6 +14,7 @@ from core.spec_validator import SpecValidator
 from core.column_matcher import standardize_column_names, prepare_error_columns
 from core.spec_detector import detect_spec_sheet
 from core.pivot_utils import build_groupby_columns, calculate_per_k_rates, calculate_total_rate, apply_spec_validation
+from core.spec_validator import _SPEC_FILE_CACHE as _SPEC_RAW_CACHE
 
 # OPTIMIZATION 1: Cache raw data at module level
 _RAW_DATA_CACHE = {}
@@ -33,6 +34,7 @@ class UnifiedPivotGenerator:
         'Test Condition': ['Test Condition', 'Test conditions'],
         'Unit': ['Unit', 'unit', 'Unit#', 'Unit #', 'Unit No', 'Unit Number'],
         'Tpages': ['Tpages', 'Tpages Printed', 'Actual Printed Sheets', 'Actual Run Pages', 'ADF TPages'],
+        'Tsheets': ['Tsheets Printed', 'Tsheets', 'tsheets printed'],
         'Print Quality': ['Print Quality', 'Color/Quality']
     }
     
@@ -130,7 +132,7 @@ class UnifiedPivotGenerator:
         # Whether the spec differentiates by Input Tray determines two things below:
         # 1. whether blank-tray rows are dropped
         # 2. whether the Input Tray column is kept in processed_data (and thus groupby)
-        self.spec_has_tray = self.spec_validator.has_tray if self.spec_validator else True
+        self.spec_has_tray = self.spec_validator.has_tray if self.spec_validator else False
 
 
         # When the spec has no tray entries, remove the Input Tray column so it is
@@ -178,7 +180,9 @@ class UnifiedPivotGenerator:
                 :, ~self.processed_data.columns.duplicated()
             ]
 
-        self.numeric_columns = ['Tpages'] + self.error_output_columns
+        denom_col = getattr(self.config, 'denominator_column', 'Tpages')
+        extra = [denom_col] if denom_col != 'Tpages' and denom_col in self.processed_data.columns else []
+        self.numeric_columns = ['Tpages'] + extra + self.error_output_columns
 
     def _detect_printer_info(self):
         """Extract printer metadata (only called once)."""
@@ -333,11 +337,14 @@ class UnifiedPivotGenerator:
             .reset_index()
         )
 
-        pivot = calculate_per_k_rates(pivot, self.error_output_columns)
+        denom_col = getattr(self.config, 'denominator_column', 'Tpages')
+        if denom_col not in pivot.columns:
+            denom_col = 'Tpages'
+        pivot = calculate_per_k_rates(pivot, self.error_output_columns, denom_col)
         pivot, per_k_cols = calculate_total_rate(pivot, self.error_output_columns, self.config.total_column_name)
         pivot = apply_spec_validation(pivot, self.spec_validator, self.config.total_column_name)
 
-        final_cols = groupby_cols + ['Tpages'] + per_k_cols + [self.config.total_column_name]
+        final_cols = groupby_cols + [denom_col] + per_k_cols + [self.config.total_column_name]
 
         if self.spec_validator:
             final_cols.append('Spec Limit')
@@ -368,11 +375,14 @@ class UnifiedPivotGenerator:
             .reset_index()
         )
 
-        pivot = calculate_per_k_rates(pivot, self.error_output_columns)
+        denom_col = getattr(self.config, 'denominator_column', 'Tpages')
+        if denom_col not in pivot.columns:
+            denom_col = 'Tpages'
+        pivot = calculate_per_k_rates(pivot, self.error_output_columns, denom_col)
         pivot, per_k_cols = calculate_total_rate(pivot, self.error_output_columns, self.config.total_column_name)
         pivot = apply_spec_validation(pivot, self.spec_validator, self.config.total_column_name)
 
-        final_cols = groupby_cols + ['Tpages'] + per_k_cols + [self.config.total_column_name]
+        final_cols = groupby_cols + [denom_col] + per_k_cols + [self.config.total_column_name]
 
         if self.spec_validator:
             final_cols.append('Spec Limit')
@@ -383,7 +393,7 @@ class UnifiedPivotGenerator:
             pivot['Result'] = pivot['Result'].astype(str).str.upper()
 
         pivot = pivot[final_cols]
-        
+
         if 'Unit' in groupby_cols:
             grand_total_groupby = [col for col in groupby_cols if col != 'Unit']
             pivot = self.add_grand_totals(pivot, grand_total_groupby)
@@ -391,83 +401,76 @@ class UnifiedPivotGenerator:
         return pivot
     
     def add_grand_totals(self, df, groupby_cols):
-        """Add grand total rows - OPTIMIZED with vectorized operations."""
+        """Add grand total rows — uses groupby() instead of per-row masking."""
         grand_total_col = 'Unit'
-        
+
         if grand_total_col not in df.columns:
             return df
 
-        result_rows = []
-        combinations = df[groupby_cols].drop_duplicates()
-        
-        per_k_cols = [col for col in df.columns 
-                     if col.endswith('/K') and col != self.config.total_column_name]
+        denom_col = getattr(self.config, 'denominator_column', 'Tpages')
+        if denom_col not in df.columns:
+            denom_col = 'Tpages'
 
-        for _, combo in combinations.iterrows():
-            # Vectorized mask creation — handle NaN values (NaN == NaN is False in pandas)
-            mask = pd.Series(True, index=df.index)
-            for col in groupby_cols:
-                val = combo[col]
-                if pd.isna(val):
-                    mask &= df[col].isna()
-                else:
-                    mask &= (df[col] == val)
-            
-            subset = df[mask]
-            
+        per_k_cols = [col for col in df.columns
+                      if col.endswith('/K') and col != self.config.total_column_name]
+
+        result_rows = []
+
+        for combo_key, subset in df.groupby(groupby_cols, dropna=False, sort=False):
             if len(subset) == 0:
                 continue
-            
+
             result_rows.append(subset)
-            
-            # Create grand total row
-            grand_total = pd.DataFrame(columns=df.columns, index=[0])
-            for col in groupby_cols:
-                grand_total[col] = combo[col]
-            
-            grand_total[grand_total_col] = 'Grand Total'
-            total_tpages = subset['Tpages'].sum()
-            grand_total['Tpages'] = total_tpages
-            
-            if total_tpages > 0:
-                # Vectorized calculation for all per-K columns
+
+            combo_vals = combo_key if isinstance(combo_key, tuple) else (combo_key,)
+            gt_dict = dict(zip(groupby_cols, combo_vals))
+            gt_dict[grand_total_col] = 'Grand Total'
+
+            total_denom = subset[denom_col].sum() if denom_col in subset.columns else 0.0
+            gt_dict[denom_col] = total_denom
+
+            if total_denom > 0:
                 for col in per_k_cols:
-                    weighted_sum = (subset[col] * subset['Tpages'] / 1000).sum()
-                    grand_total[col] = round((weighted_sum / total_tpages) * 1000, 3)
-                
-                weighted_sum = (subset[self.config.total_column_name] * subset['Tpages'] / 1000).sum()
-                grand_total[self.config.total_column_name] = round((weighted_sum / total_tpages) * 1000, 3)
+                    if col in subset.columns:
+                        weighted_sum = (subset[col] * subset[denom_col] / 1000).sum()
+                        gt_dict[col] = round((weighted_sum / total_denom) * 1000, 3)
+                total_col_name = self.config.total_column_name
+                if total_col_name in subset.columns:
+                    weighted_sum = (subset[total_col_name] * subset[denom_col] / 1000).sum()
+                    gt_dict[total_col_name] = round((weighted_sum / total_denom) * 1000, 3)
             else:
                 for col in per_k_cols:
-                    grand_total[col] = 0.0
-                grand_total[self.config.total_column_name] = 0.0
-            
+                    gt_dict[col] = 0.0
+                gt_dict[self.config.total_column_name] = 0.0
+
+            gt_series = pd.Series(gt_dict)
             if self.spec_validator:
                 spec_limit, actual_rate, result = self.spec_validator.evaluate(
-                    pivot_row=grand_total.iloc[0],
+                    pivot_row=gt_series,
                     total_per_k_col=self.config.total_column_name,
                 )
-                grand_total['Spec Limit'] = spec_limit
-                grand_total['Result'] = result.upper()
+                gt_dict['Spec Limit'] = spec_limit
+                gt_dict['Result'] = result.upper()
             else:
-                grand_total['Result'] = 'NO SPEC PROVIDED'
+                gt_dict['Result'] = 'NO SPEC PROVIDED'
 
-            result_rows.append(grand_total)
-        
-        if len(result_rows) == 0:
+            result_rows.append(pd.DataFrame([gt_dict]))
+
+        if not result_rows:
             return df
-        
+
         result = pd.concat(result_rows, ignore_index=True)
-        
+
         if 'Result' in result.columns:
             result['Result'] = result['Result'].astype(str).str.upper()
-        
+
         return result
 
     @staticmethod
     def clear_cache():
         """Clear all caches (call at end of processing)."""
         _RAW_DATA_CACHE.clear()
+        _SPEC_RAW_CACHE.clear()
         UnifiedPivotGenerator._spec_validator_cache.clear()
         if hasattr(UnifiedPivotGenerator, '_detection_done'):
             delattr(UnifiedPivotGenerator, '_detection_done')

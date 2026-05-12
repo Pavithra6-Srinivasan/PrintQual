@@ -10,12 +10,13 @@ class SpecCategoryConfig:
     Configuration for a single test category.
     """
     
-    def __init__(self, name, error_column_config, total_column_name, additional_groupby_cols=None):
+    def __init__(self, name, error_column_config, total_column_name, additional_groupby_cols=None, denominator_column='Tpages'):
 
         self.name = name
         self.error_column_config = error_column_config
         self.total_column_name = total_column_name
         self.additional_groupby_cols = additional_groupby_cols or []
+        self.denominator_column = denominator_column
 
 # ============================================================================
 # Paperpath CATEGORY DEFINITIONS
@@ -23,6 +24,7 @@ class SpecCategoryConfig:
 
 INTERVENTION_CONFIG = SpecCategoryConfig(
     name="Intervention",
+    denominator_column='Tsheets',
     error_column_config={
         'NP': ['NP_Top', 'NP_Middle', 'NP_Bottom1', 'NP_Bottom2', 'NP_Last Page'],
         'MP': ['MP_Top', 'MP_Middle', 'MP_Bottom', 'MP_Bottom1', 'MP_Bottom2', 'MP_Last page', 'MMP_Top', 'MMP_Middle', 'MMP_Bottom1', 'MMP_Bottom2', 'MMP_Last page'],
@@ -111,14 +113,10 @@ SOFT_ERROR_CONFIG = SpecCategoryConfig(
         'BOF_Line Shift Up': 'BOF_Line Shift Up',
         'MSD_BOF Missing Line_S1': 'MSD_BOF Missing Line_S1',
         'MSD_BOF Missing Line_S2': 'MSD_BOF Missing Line_S2',
-        'Margin Shift_Up_S1': 'Margin Shift_Up_S1',
-        'Margin Shift_Down_S1': 'Margin Shift_Down_S1',
-        'Margin Shift_Left_S1': 'Margin Shift_Left_S1',
-        'Margin Shift_Right_S1': 'Margin Shift_Right_S1',
-        'Margin Shift_Up_S2': ['Margin Shift_Up_S2', 'Margin Shift up_S1'],
-        'Margin Shift_Down_S2': ['Margin Shift_Down_S2', 'Margin Shift down_S2'],
-        'Margin Shift_Left_S2': 'Margin Shift_Left_S2',
-        'Margin Shift_Right_S2': 'Margin Shift_Right_S2',
+        'Margin Shift_Up': ['Margin Shift_Up_S1', 'Margin Shift_Up_S2'],
+        'Margin Shift_Down': ['Margin Shift_Down_S1', 'Margin Shift_Down_S2', 'Margin Shift down_S2'],
+        'Margin Shift_Left': ['Margin Shift_Left_S1', 'Margin Shift_Left_S2'],
+        'Margin Shift_Right': ['Margin Shift_Right_S1', 'Margin Shift_Right_S2'],
         'Obvious Skew_S1': 'Obvious Skew_S1',
         'Obvious Skew_S2': 'Obvious Skew_S2',
         'Missing Bottom Line_S1': 'Missing Bottom Line_S1'
@@ -273,6 +271,7 @@ PQ_CONFIG = SpecCategoryConfig(
 
 ADF_INTERVENTION_CONFIG = SpecCategoryConfig(
     name="Intervention",
+    denominator_column='Tsheets',
     error_column_config={
         'ADF No Pick': ['ADF No Pick_Top (Top 5 sheets)', 'ADF No Pick_Middle', 'ADF No Pick_Bottom (Last 5 sheets)', 'ADF No Pick_ Last Sheet'],
         'ADF Multipick': ['ADF MP_Top (Top 5 sheets)', 'ADF MP_Middle', 'ADF MP_Bottom (Last 5 sheets)', 'ADF MP_2nd Last sheets'],

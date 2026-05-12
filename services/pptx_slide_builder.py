@@ -413,18 +413,16 @@ def _draw_kt_table(slide, prs, group, x, y, width):
     (visual deduplication without actual PowerPoint cell merging).
     """
     rows        = group.get("rows", [])
-    col_w_cat   = 0.70
-    col_w_mtype = 1.00
-    col_w_mcat  = 0.80
-    col_w_res   = 0.65
-    col_w_rem   = max(0.5, width - col_w_cat - col_w_mtype - col_w_mcat - col_w_res)
-    col_widths  = [col_w_cat, col_w_mtype, col_w_mcat, col_w_res, col_w_rem]
+    col_w_cat   = 0.90
+    col_w_res   = 1.30
+    col_w_rem   = max(0.5, width - col_w_cat - col_w_res)
+    col_widths  = [col_w_cat, col_w_res, col_w_rem]
 
     row_heights = _kt_row_heights(rows, col_w_rem)
     table_h     = KT_HDR_H + sum(row_heights)
 
     table = slide.shapes.add_table(
-        1 + len(rows), 5,
+        1 + len(rows), 3,
         Inches(x), Inches(y),
         Inches(width), Inches(table_h)
     ).table
@@ -438,7 +436,7 @@ def _draw_kt_table(slide, prs, group, x, y, width):
     for ri, h in enumerate(row_heights):
         table.rows[ri + 1].height = Inches(h)
 
-    for ci, hdr in enumerate(["Category", "Media Type", "Media Cat", "Result", "Remarks"]):
+    for ci, hdr in enumerate(["Category", "Result", "Remarks"]):
         cell = table.cell(0, ci)
         cell.fill.solid()
         cell.fill.fore_color.rgb = COL_BLUE
@@ -465,25 +463,14 @@ def _draw_kt_table(slide, prs, group, x, y, width):
         set_text(cell, display_cat, size=8)
         set_border(cell)
 
+        result_style = row_info.get("result_style", result)
         cell = table.cell(tr, 1)
         cell.fill.solid()
-        cell.fill.fore_color.rgb = COL_WHITE
-        set_text(cell, media_type, size=8, align=PP_ALIGN.CENTER)
-        set_border(cell)
-
-        cell = table.cell(tr, 2)
-        cell.fill.solid()
-        cell.fill.fore_color.rgb = COL_WHITE
-        set_text(cell, media_cat, size=8, align=PP_ALIGN.CENTER)
-        set_border(cell)
-
-        cell = table.cell(tr, 3)
-        cell.fill.solid()
-        if result in ("PASS", "No issue"):
+        if result_style in ("PASS", "No issue"):
             cell.fill.fore_color.rgb = COL_PASS_BG
             set_text(cell, result, bold=True, fg=COL_PASS_FG,
-                     size=8, align=PP_ALIGN.CENTER)
-        elif result in ("Observation", "With observation"):
+                     size=7, align=PP_ALIGN.LEFT)
+        elif result_style in ("Observation", "With observation", "With Observation"):
             cell.fill.fore_color.rgb = RGBColor(0xFF, 0xEB, 0x9C)  # amber
             set_text(cell, result, bold=True, fg=RGBColor(0x7F, 0x4E, 0x00),
                      size=8, align=PP_ALIGN.CENTER)
@@ -493,7 +480,7 @@ def _draw_kt_table(slide, prs, group, x, y, width):
                      size=8, align=PP_ALIGN.CENTER)
         set_border(cell)
 
-        cell = table.cell(tr, 4)
+        cell = table.cell(tr, 2)
         set_text(cell, "\n".join(remarks), size=8)
         set_border(cell)
 
@@ -502,7 +489,7 @@ def _draw_kt_table(slide, prs, group, x, y, width):
                 "slide_obj": slide,
                 "table":     table,
                 "row":       tr,
-                "col":       4,   # remarks is now column 4
+                "col":       2,   # remarks is column 2
                 "cat_name":  cat,
             })
 

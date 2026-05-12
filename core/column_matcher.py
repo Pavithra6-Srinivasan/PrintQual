@@ -79,21 +79,18 @@ def prepare_error_columns(raw_data, config):
                 else:
                     print(f"  ✗ Warning: Column '{input_spec}' not found")
 
-        if 'Tpages' in processed_data.columns:
-            col = processed_data['Tpages']
-
-            # Case 1: Proper Series
-            if isinstance(col, pd.Series):
-                processed_data['Tpages'] = pd.to_numeric(col, errors='coerce').fillna(0)
-
-            # Case 2: Duplicate columns → sum them row-wise
-            elif isinstance(col, pd.DataFrame):
-                print("⚠ Multiple Tpages columns detected — summing them")
-                processed_data['Tpages'] = (
-                    col.apply(pd.to_numeric, errors='coerce')
-                    .fillna(0)
-                    .sum(axis=1)
-                )
+    # Normalise Tpages once after all error columns are processed
+    if 'Tpages' in processed_data.columns:
+        col = processed_data['Tpages']
+        if isinstance(col, pd.Series):
+            processed_data['Tpages'] = pd.to_numeric(col, errors='coerce').fillna(0)
+        elif isinstance(col, pd.DataFrame):
+            print("⚠ Multiple Tpages columns detected — summing them")
+            processed_data['Tpages'] = (
+                col.apply(pd.to_numeric, errors='coerce')
+                .fillna(0)
+                .sum(axis=1)
+            )
 
     return processed_data, error_output_columns
 

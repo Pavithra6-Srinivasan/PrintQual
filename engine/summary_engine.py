@@ -58,7 +58,7 @@ class PivotSummaryEngine:
         for category_name, data in self.all_pivots.items():
             combined_df    = data["combined"].copy()
             config         = data["config"]
-            spec_has_tray  = data.get("spec_has_tray", True)
+            spec_has_tray  = data.get("spec_has_tray", False)
 
             combined_df    = self._normalise_result_col(combined_df)
             grand_total_df = self._get_grand_total_rows(combined_df)
@@ -167,7 +167,7 @@ class PivotSummaryEngine:
                                     )
                                 elif overall_result == "NO SPEC":
                                     errors = self._build_no_spec_error_list(
-                                        gt_media, per_k_cols
+                                        gt_media, per_k_cols, config
                                     )
 
                                 media_summaries.append({
@@ -273,8 +273,15 @@ class PivotSummaryEngine:
             # No spec available for this combination
             return "NO SPEC", None, None
 
-        # Tpages-weighted average of total rate across all media names
-        tpages = pd.to_numeric(gt_media["Tpages"], errors="coerce").fillna(0)
+        # denominator-weighted average of total rate across all media names
+        denom_col = getattr(config, 'denominator_column', 'Tpages')
+        if denom_col not in gt_media.columns:
+            denom_col = 'Tpages'
+        tpages = pd.to_numeric(
+            gt_media[denom_col] if denom_col in gt_media.columns
+            else pd.Series(0, index=gt_media.index),
+            errors="coerce"
+        ).fillna(0)
         rates  = pd.to_numeric(gt_media[total_col], errors="coerce").fillna(0)
 
         total_tpages = tpages.sum()
@@ -313,9 +320,12 @@ class PivotSummaryEngine:
             if not spec_series.empty:
                 spec_val = float(spec_series.iloc[0])
 
+        denom_col = getattr(config, 'denominator_column', 'Tpages')
+        if denom_col not in gt_media.columns:
+            denom_col = 'Tpages'
         tpages_all = pd.to_numeric(
-            gt_media["Tpages"], errors="coerce"
-        ).fillna(0) if "Tpages" in gt_media.columns else pd.Series(
+            gt_media[denom_col], errors="coerce"
+        ).fillna(0) if denom_col in gt_media.columns else pd.Series(
             [0.0] * len(gt_media), index=gt_media.index
         )
         total_tpages = tpages_all.sum()
@@ -326,7 +336,7 @@ class PivotSummaryEngine:
 
             rates = pd.to_numeric(gt_media[col], errors="coerce").fillna(0)
 
-            # Tpages-weighted average across all media names
+            # denominator-weighted average across all media names
             if total_tpages > 0:
                 accumulated_rate = float((rates * tpages_all).sum() / total_tpages)
             else:
@@ -376,8 +386,8 @@ class PivotSummaryEngine:
                         == media_name_str
                     ]
                     media_tpages = pd.to_numeric(
-                        media_gt_rows["Tpages"], errors="coerce"
-                    ).fillna(0) if "Tpages" in media_gt_rows.columns else pd.Series([0.0])
+                        media_gt_rows[denom_col], errors="coerce"
+                    ).fillna(0) if denom_col in media_gt_rows.columns else pd.Series([0.0])
                     media_rates  = pd.to_numeric(
                         media_gt_rows[col], errors="coerce"
                     ).fillna(0)
@@ -438,9 +448,12 @@ class PivotSummaryEngine:
         if spec_val is None:
             return []
 
+        denom_col = getattr(config, 'denominator_column', 'Tpages')
+        if denom_col not in gt_media.columns:
+            denom_col = 'Tpages'
         tpages_all = pd.to_numeric(
-            gt_media["Tpages"], errors="coerce"
-        ).fillna(0) if "Tpages" in gt_media.columns else pd.Series(
+            gt_media[denom_col], errors="coerce"
+        ).fillna(0) if denom_col in gt_media.columns else pd.Series(
             [0.0] * len(gt_media), index=gt_media.index
         )
         total_tpages = tpages_all.sum()
@@ -455,19 +468,17 @@ class PivotSummaryEngine:
             if "Media Name" not in gt_media.columns:
                 continue
 
+            col_rates = pd.to_numeric(gt_media[col], errors="coerce").fillna(0)
+            breaching_df = gt_media[col_rates > spec_val]
             breaching_media = []
-            for _, row in gt_media.iterrows():
+            for _, row in breaching_df.iterrows():
                 media_name_str = str(row.get("Media Name", "")).strip()
                 if not media_name_str:
                     continue
-                media_rate = pd.to_numeric(row.get(col, 0), errors="coerce")
-                if pd.isna(media_rate) or media_rate <= spec_val:
-                    continue
-                # This media name individually breaches spec
                 breaching_media.append({
                     "media_name": media_name_str,
-                    "units":      [],   # no units for PASS overall
-                    "rate":       round(float(media_rate), 2)
+                    "units":      [],
+                    "rate":       round(float(pd.to_numeric(row.get(col, 0), errors="coerce")), 2)
                 })
 
             if not breaching_media:
@@ -495,7 +506,7 @@ class PivotSummaryEngine:
     # NO SPEC ERROR LIST BUILDER
     # ------------------------------------------------------------------
 
-    def _build_no_spec_error_list(self, gt_media, per_k_cols):
+    def _build_no_spec_error_list(self, gt_media, per_k_cols, config=None):
         """
         For categories with no spec (e.g. Other Defects, PQ):
         - Find error columns with non-zero rates across all media combined
@@ -506,8 +517,12 @@ class PivotSummaryEngine:
         NO_SPEC_TOP_N = 5
         error_candidates = []
 
+        denom_col = getattr(config, 'denominator_column', 'Tpages') if config else 'Tpages'
+        if denom_col not in gt_media.columns:
+            denom_col = 'Tpages'
         tpages_all = pd.to_numeric(
-            gt_media.get("Tpages", pd.Series(0, index=gt_media.index)),
+            gt_media[denom_col] if denom_col in gt_media.columns
+            else pd.Series(0, index=gt_media.index),
             errors="coerce"
         ).fillna(0)
         total_tpages = tpages_all.sum()
