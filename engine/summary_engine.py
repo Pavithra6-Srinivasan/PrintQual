@@ -159,7 +159,8 @@ class PivotSummaryEngine:
                                 errors = []
                                 if overall_result == "FAIL":
                                     errors = self._build_error_list(
-                                        gt_media, unit_media, per_k_cols, config
+                                        gt_media, unit_media, per_k_cols, config,
+                                        total_rate=accumulated_rate
                                     )
                                 elif overall_result == "PASS":
                                     errors = self._build_pass_error_list(
@@ -299,15 +300,19 @@ class PivotSummaryEngine:
     # ERROR LIST BUILDER
     # ------------------------------------------------------------------
 
-    def _build_error_list(self, gt_media, unit_media, per_k_cols, config):
+    def _build_error_list(self, gt_media, unit_media, per_k_cols, config,
+                          total_rate=None):
         """
         For each error column:
           1. Compute Tpages-weighted average of that error rate across ALL
              media names in this (media_type, print_mode) combination.
-          2. Include the error only if that accumulated rate exceeds spec.
+          2. Include the error if rate > 0 (regardless of whether it exceeds spec).
           3. Display the accumulated rate (not per-media-name max).
-          4. Under each media name, list units where Result = FAIL and
-             rate > 0 for that specific error column.
+          4. Under each error that exceeds spec, list units where Result = FAIL
+             and rate > 0 for that specific error column.
+
+        Prepends the total category rate as the first entry so it is always
+        shown, even when no individual error type breaches the spec alone.
         """
         error_candidates = []
 
@@ -345,77 +350,82 @@ class PivotSummaryEngine:
             if accumulated_rate <= 0:
                 continue
 
-            # Only include if accumulated rate exceeds spec
-            if spec_val is not None and accumulated_rate <= spec_val:
-                continue
-
             accumulated_rate = round(accumulated_rate, 2)
 
-            # Build failed media list — media names with non-zero rate
+            # Only build failed_media list for errors that exceed spec
             failed_media_list = []
+            if spec_val is not None and accumulated_rate > spec_val:
+                if "Media Name" in gt_media.columns:
+                    nonzero_gt = gt_media[rates > 0]
 
-            if "Media Name" in gt_media.columns:
-                nonzero_gt = gt_media[rates > 0]
+                    for media_name in nonzero_gt["Media Name"].dropna().unique():
+                        media_name_str = str(media_name).strip()
+                        failed_units   = []
 
-                for media_name in nonzero_gt["Media Name"].dropna().unique():
-                    media_name_str = str(media_name).strip()
-                    failed_units   = []
-
-                    if not unit_media.empty and "Media Name" in unit_media.columns:
-                        col_mask = (
-                            pd.to_numeric(unit_media[col], errors="coerce").fillna(0) > 0
-                            if col in unit_media.columns
-                            else pd.Series([False] * len(unit_media),
-                                           index=unit_media.index)
-                        )
-                        unit_rows = unit_media[
-                            (unit_media["Media Name"].astype(str).str.strip()
-                             == media_name_str) &
-                            (unit_media["Result"].astype(str).str.upper() == "FAIL") &
-                            col_mask
-                        ]
-                        if "Unit" in unit_rows.columns:
-                            failed_units = sorted(
-                                unit_rows["Unit"].astype(str).str.strip()
-                                .unique().tolist()
+                        if not unit_media.empty and "Media Name" in unit_media.columns:
+                            col_mask = (
+                                pd.to_numeric(unit_media[col], errors="coerce").fillna(0) > 0
+                                if col in unit_media.columns
+                                else pd.Series([False] * len(unit_media),
+                                               index=unit_media.index)
                             )
+                            unit_rows = unit_media[
+                                (unit_media["Media Name"].astype(str).str.strip()
+                                 == media_name_str) &
+                                (unit_media["Result"].astype(str).str.upper() == "FAIL") &
+                                col_mask
+                            ]
+                            if "Unit" in unit_rows.columns:
+                                failed_units = sorted(
+                                    unit_rows["Unit"].astype(str).str.strip()
+                                    .unique().tolist()
+                                )
 
-                    # Per-media-name rate for display
-                    media_gt_rows = nonzero_gt[
-                        nonzero_gt["Media Name"].astype(str).str.strip()
-                        == media_name_str
-                    ]
-                    media_tpages = pd.to_numeric(
-                        media_gt_rows[denom_col], errors="coerce"
-                    ).fillna(0) if denom_col in media_gt_rows.columns else pd.Series([0.0])
-                    media_rates  = pd.to_numeric(
-                        media_gt_rows[col], errors="coerce"
-                    ).fillna(0)
-                    media_total_tp = media_tpages.sum()
+                        # Per-media-name rate for display
+                        media_gt_rows = nonzero_gt[
+                            nonzero_gt["Media Name"].astype(str).str.strip()
+                            == media_name_str
+                        ]
+                        media_tpages = pd.to_numeric(
+                            media_gt_rows[denom_col], errors="coerce"
+                        ).fillna(0) if denom_col in media_gt_rows.columns else pd.Series([0.0])
+                        media_rates  = pd.to_numeric(
+                            media_gt_rows[col], errors="coerce"
+                        ).fillna(0)
+                        media_total_tp = media_tpages.sum()
 
-                    if media_total_tp > 0:
-                        media_rate = round(
-                            float((media_rates * media_tpages).sum() / media_total_tp), 2
-                        )
-                    else:
-                        media_rate = round(float(media_rates.max()), 2)
+                        if media_total_tp > 0:
+                            media_rate = round(
+                                float((media_rates * media_tpages).sum() / media_total_tp), 2
+                            )
+                        else:
+                            media_rate = round(float(media_rates.max()), 2)
 
-                    failed_media_list.append({
-                        "media_name": media_name_str,
-                        "units":      failed_units,
-                        "rate":       media_rate
-                    })
+                        failed_media_list.append({
+                            "media_name": media_name_str,
+                            "units":      failed_units,
+                            "rate":       media_rate
+                        })
 
-            if failed_media_list:
-                error_name = col.replace("/K", "").strip()
-                error_candidates.append({
-                    "error":        error_name,
-                    "rate":         accumulated_rate,
-                    "failed_media": failed_media_list
-                })
+            error_name = col.replace("/K", "").strip()
+            error_candidates.append({
+                "error":        error_name,
+                "rate":         accumulated_rate,
+                "failed_media": failed_media_list
+            })
 
         # Sort by accumulated rate descending
         error_candidates.sort(key=lambda x: x["rate"], reverse=True)
+
+        # Prepend the total category rate so it is always the first line shown
+        if total_rate is not None:
+            total_name = config.total_column_name.replace("/K", "").strip()
+            error_candidates.insert(0, {
+                "error":        total_name,
+                "rate":         total_rate,
+                "failed_media": []
+            })
+
         return error_candidates
 
     # ------------------------------------------------------------------

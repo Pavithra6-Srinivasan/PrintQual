@@ -406,9 +406,11 @@ class StorageService:
                 if rc.value == "PASS":
                     rc.fill = _fill(_GREEN)
                     rc.font = _font(_BLACK, bold=True)
+                    rc.value = "No Issue"
                 elif rc.value == "FAIL":
                     rc.fill = _fill(_RED)
                     rc.font = _font(_BLACK, bold=True)
+                    rc.value = "With observation"
 
             # Highlight individual /K values that exceed spec limit
             if spec_ci and k_cis:

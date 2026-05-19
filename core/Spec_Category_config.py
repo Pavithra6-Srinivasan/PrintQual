@@ -402,7 +402,8 @@ ADF_OTHER_ISSUE_CONFIG = SpecCategoryConfig(
         'Top Black Bar_S1': 'Top Black Bar_S1',
         'Top Black Bar_S2': 'Top Black Bar_S2',
         'Missing Bottom Line': 'Missing Bottom Line',
-        'Excess Area': 'Excess Area'
+        'Excess Area': 'Excess Area',
+        'Horizontal White Line S1': 'Horizontal White Line S1',
     },
     total_column_name="Sum of Total Other Issue"
 )

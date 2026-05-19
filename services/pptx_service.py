@@ -23,17 +23,20 @@ from services.pptx_slide_builder import (
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def generate_summary_pptx(output_path, summary_data, printer, variant,
-                           sub_assembly, year, quarter, overview=None):
+                           sub_assembly, year, quarter, overview=None,
+                           raw_filename_stem=None):
     prs = Presentation()
     prs.slide_width  = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
 
     if overview:
-        add_title_slide(prs, overview, printer, variant, sub_assembly, year, quarter)
+        add_title_slide(prs, overview, printer, variant, sub_assembly, year, quarter,
+                        raw_filename_stem=raw_filename_stem)
 
     if overview:
         add_overview_slide(prs, overview, summary_data,
-                           printer, variant, sub_assembly, year, quarter)
+                           printer, variant, sub_assembly, year, quarter,
+                           raw_filename_stem=raw_filename_stem)
 
     all_blocks = build_all_blocks(summary_data)
     slides     = paginate_blocks(all_blocks)

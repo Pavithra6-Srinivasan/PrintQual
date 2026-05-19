@@ -28,7 +28,7 @@ AVAIL_H      = SLIDE_BOTTOM - SLIDE_TOP
 
 # ── Content table column widths (must sum to TABLE_W = 9.5") ─────────────────
 # MediaType | MediaCat | PrintMode | Spec | Result | Error | MediaName | Units
-COL_W   = [0.85, 0.65, 0.85, 0.60, 0.90, 1.40, 2.65, 1.60]
+COL_W   = [0.85, 0.65, 0.85, 0.60, 0.85, 1.40, 2.70, 1.60]
 HEADERS = ["Media Type", "Media Cat", "Print Mode", "Spec", "Overall Result",
            "Error Type", "Media Name", "Unit"]
 N_COLS  = len(HEADERS)

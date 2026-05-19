@@ -27,13 +27,19 @@ from pptx.dml.color import RGBColor
 
 # ── Title slide ───────────────────────────────────────────────────────────────
 
-def add_title_slide(prs, overview, printer, variant, sub_assembly, year, quarter):
+def add_title_slide(prs, overview, printer, variant, sub_assembly, year, quarter,
+                    raw_filename_stem=None):
     """
     Slide 1: Clean title slide.
-    Line 1: Product + Variant (variant removed from printer if present) — large bold, centred
-    Line 2: "{test_condition}   {sub_assembly}   Q{quarter}FY{year}" — navy, centred
-    Line 3: test name — black, centred
-    Line 4: date — navy, centred
+
+    When raw_filename_stem is provided, the filename (format: product_variant_qualname_subassembly)
+    is parsed and shown as:
+      Line 1: product + variant — large bold, centred
+      Line 2: qualification name — navy, centred
+      Line 3: sub assembly — centred
+      Line 4: date — navy, centred
+
+    Falls back to the metadata-derived layout when no filename is given.
     """
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     slide.background.fill.solid()
@@ -53,26 +59,39 @@ def add_title_slide(prs, overview, printer, variant, sub_assembly, year, quarter
         run.font.color.rgb = color
         run.font.name      = FONT
 
+    if raw_filename_stem:
+        parts = raw_filename_stem.split("_", 3)
+        fn_product  = parts[0] if len(parts) > 0 else ""
+        fn_variant  = parts[1] if len(parts) > 1 else ""
+        fn_qualname = parts[2] if len(parts) > 2 else ""
+        fn_subassy  = parts[3] if len(parts) > 3 else ""
+
+        line1 = " ".join(p for p in [fn_product, fn_variant] if p)
+        line2 = fn_qualname
+        line3 = fn_subassy
+
+        add_text(line1,  0.50, 0.65, 30, bold=True)
+        add_text(line2,  1.25, 0.40, 16, color=COL_NAVY)
+        add_text(line3,  1.75, 0.55, 14)
+        add_text(f"Date : {datetime.now().strftime('%d %b %Y')}",
+                 2.40, 0.35, 12, color=COL_NAVY)
+        return
+
+    # ── Fallback: derive from metadata ───────────────────────────────────────
     test_name      = overview.get("objective", "")
     test_condition = overview.get("test_condition", "")
 
-    # Remove variant suffix from printer if it's already there (case-insensitive)
     product_base = printer or ""
     if variant and product_base.lower().endswith(variant.lower()):
         product_base = product_base[:-len(variant)].strip()
 
-    # Title: product base + variant, with proper title case — skip empty parts
     title_line = " ".join(w.capitalize() for w in " ".join(
         p for p in [product_base, variant] if p
     ).split())
 
-    project_phase = overview.get("project_phase", "")
+    project_phase    = overview.get("project_phase", "")
     phase_or_quarter = project_phase if project_phase else f"Q{quarter}FY{year}"
-
-    # Always show sub_assembly so ADF Scan / ADF Copy is unambiguous when the
-    # data was split. For non-split cases (e.g. plain "ADF") it is still shown
-    # so the slide is self-contained.
-    line3 = "   ".join(p for p in [test_condition, sub_assembly, test_name] if p)
+    line3            = "   ".join(p for p in [test_condition, sub_assembly, test_name] if p)
 
     add_text(title_line,
              0.50, 0.65, 30, bold=True)
@@ -87,7 +106,7 @@ def add_title_slide(prs, overview, printer, variant, sub_assembly, year, quarter
 # ── Overview slide ────────────────────────────────────────────────────────────
 
 def add_overview_slide(prs, overview, summary_data, printer, variant,
-                       sub_assembly, year, quarter):
+                       sub_assembly, year, quarter, raw_filename_stem=None):
     """
     Slide 2: Overview with test info table and Key Takeaways table.
     """
@@ -107,29 +126,32 @@ def add_overview_slide(prs, overview, summary_data, printer, variant,
     project_phase = overview.get("project_phase", "")
     phase_or_quarter = project_phase if project_phase else f"Q{quarter}FY{year}"
 
-    # Skip product_variant if it already appears in one of the other parts
-    other_parts = [phase_or_quarter, test_condition, sub_assembly, test_name]
-    other_text  = " ".join(p for p in other_parts if p).lower()
-    pv_lower    = product_variant.lower()
-    show_product = product_variant and pv_lower not in other_text
+    if raw_filename_stem:
+        title_str = f"{raw_filename_stem.replace('_', ' ')} Life Test Summary"
+    else:
+        # Skip product_variant if it already appears in one of the other parts
+        other_parts = [phase_or_quarter, test_condition, sub_assembly, test_name]
+        other_text  = " ".join(p for p in other_parts if p).lower()
+        pv_lower    = product_variant.lower()
+        show_product = product_variant and pv_lower not in other_text
 
-    # Skip sub_assembly if it already appears in any other part
-    sa_lower_s2   = (sub_assembly or "").lower()
-    other_no_sa   = " ".join(p for p in [
-        product_variant if show_product else "",
-        phase_or_quarter, test_condition, test_name
-    ] if p).lower()
-    show_sa_s2 = bool(sub_assembly) and sa_lower_s2 not in other_no_sa
-
-    title_str = " ".join(
-        p for p in [
+        # Skip sub_assembly if it already appears in any other part
+        sa_lower_s2   = (sub_assembly or "").lower()
+        other_no_sa   = " ".join(p for p in [
             product_variant if show_product else "",
-            phase_or_quarter, test_condition,
-            sub_assembly if show_sa_s2 else "",
-            test_name, "Summary"
-        ]
-        if p
-    )
+            phase_or_quarter, test_condition, test_name
+        ] if p).lower()
+        show_sa_s2 = bool(sub_assembly) and sa_lower_s2 not in other_no_sa
+
+        title_str = " ".join(
+            p for p in [
+                product_variant if show_product else "",
+                phase_or_quarter, test_condition,
+                sub_assembly if show_sa_s2 else "",
+                test_name, "Summary"
+            ]
+            if p
+        )
 
     # Title text box
     txb = slide.shapes.add_textbox(
@@ -414,7 +436,7 @@ def _draw_kt_table(slide, prs, group, x, y, width):
     """
     rows        = group.get("rows", [])
     col_w_cat   = 0.90
-    col_w_res   = 1.30
+    col_w_res   = 1.05
     col_w_rem   = max(0.5, width - col_w_cat - col_w_res)
     col_widths  = [col_w_cat, col_w_res, col_w_rem]
 
@@ -469,10 +491,10 @@ def _draw_kt_table(slide, prs, group, x, y, width):
         if result_style in ("PASS", "No issue"):
             cell.fill.fore_color.rgb = COL_PASS_BG
             set_text(cell, result, bold=True, fg=COL_PASS_FG,
-                     size=7, align=PP_ALIGN.LEFT)
+                     size=7, align=PP_ALIGN.CENTER)
         elif result_style in ("Observation", "With observation", "With Observation"):
-            cell.fill.fore_color.rgb = RGBColor(0xFF, 0xEB, 0x9C)  # amber
-            set_text(cell, result, bold=True, fg=RGBColor(0x7F, 0x4E, 0x00),
+            cell.fill.fore_color.rgb = COL_FAIL_BG
+            set_text(cell, result, bold=True, fg=COL_FAIL_FG,
                      size=8, align=PP_ALIGN.CENTER)
         else:
             cell.fill.fore_color.rgb = COL_FAIL_BG
@@ -587,11 +609,11 @@ def add_content_slide(prs, slide_blocks):
                 if new_ci == result_new_ci and val in ("PASS", "FAIL", "NO SPEC"):
                     if val == "PASS":
                         cell.fill.fore_color.rgb = COL_PASS_BG
-                        set_text(cell, val, bold=True, fg=COL_PASS_FG,
+                        set_text(cell, "No Issue", bold=True, fg=COL_PASS_FG,
                                  size=PT_CONTENT_BODY, align=PP_ALIGN.CENTER)
                     elif val == "FAIL":
                         cell.fill.fore_color.rgb = COL_FAIL_BG
-                        set_text(cell, val, bold=True, fg=COL_FAIL_FG,
+                        set_text(cell, "With observation", bold=True, fg=COL_FAIL_FG,
                                  size=PT_CONTENT_BODY, align=PP_ALIGN.CENTER)
                     else:
                         cell.fill.fore_color.rgb = RGBColor(0xD9, 0xD9, 0xD9)

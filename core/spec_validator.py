@@ -22,11 +22,21 @@ class SpecValidator:
         self.has_tray = self._check_has_tray()
 
     def _check_has_tray(self):
-        """True if the spec sheet uses Input Tray as a differentiating column."""
+        """True if the spec sheet uses Input Tray as a differentiating column
+        for the current product variant. Filters to product-matching rows first
+        so Base (blank tray) doesn't inherit has_tray=True from Hi rows."""
         if "Input Tray" not in self.spec_df.columns:
             return False
+        df = self.spec_df
+        if self.product and "Product" in df.columns:
+            product_rows = df[df["Product"].apply(
+                lambda v: not (pd.isna(v) or str(v).strip() == "")
+                          and self.cell_matches(v, self.product)
+            )]
+            if not product_rows.empty:
+                df = product_rows
         return (
-            self.spec_df["Input Tray"]
+            df["Input Tray"]
             .dropna()
             .astype(str)
             .str.strip()
@@ -206,9 +216,6 @@ class SpecValidator:
                           f"no explicit or wildcard match among {len(df)} remaining rows. "
                           f"Spec values: {df[col].tolist()}")
                 df = pd.DataFrame()
-                break
-
-            if len(df) == 1:
                 break
 
         if df.empty:

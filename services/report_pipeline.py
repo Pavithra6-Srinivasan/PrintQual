@@ -93,6 +93,51 @@ class ReportPipeline:
 
         return [(None, None)]
 
+    # ── Database save ─────────────────────────────────────────────────────────
+
+    def _save_to_database(self, summary_data, year, quarter):
+        try:
+            from engine.database_manager import DatabaseManager
+            db = DatabaseManager(
+                host="15.46.29.115",
+                user="pavithra_030226",
+                password="pavithra@030226",
+                database="quality_sandbox"
+            )
+            saved = 0
+            for cat in summary_data.get("categories", []):
+                category_name = cat["category"]
+                for ms in cat["media_summaries"]:
+                    media_type = ms["media_type"]
+                    if ms.get("media_cat"):
+                        media_type = f"{media_type} ({ms['media_cat']})"
+
+                    errors = ms.get("errors", [])
+                    all_units, all_media_names, all_error_types = set(), set(), set()
+                    for err in errors:
+                        for fm in err.get("failed_media", []):
+                            all_media_names.add(fm["media_name"])
+                            all_units.update(fm.get("units", []))
+                            if fm.get("units"):
+                                all_error_types.add(err["error"])
+
+                    db.insert_summary_result(
+                        category=category_name,
+                        media_type=media_type,
+                        overall_result=ms["overall_result"],
+                        failed_units=", ".join(sorted(all_units)) or None,
+                        failed_media_names=", ".join(sorted(all_media_names)) or None,
+                        failed_error_types=", ".join(sorted(all_error_types)) or None,
+                        failed_conditions=ms.get("test_condition") or None,
+                        remarks=None,
+                        year=year,
+                        quarter=quarter,
+                    )
+                    saved += 1
+            print(f"✓ Saved {saved} result(s) to database (Q{quarter} {year})")
+        except Exception as e:
+            print(f"⚠ Database save skipped: {e}")
+
     # ── Single-mode pipeline ──────────────────────────────────────────────────
 
     def _run_single(self, raw_file, spec_file, output_folder,
@@ -172,6 +217,9 @@ class ReportPipeline:
             quarter = (now.month - 1) // 3 + 1
             print(f"  Fallback: Q{quarter} {year}")
 
+        # 5b. Persist results to database (non-fatal if unreachable)
+        self._save_to_database(summary_data, year, quarter)
+
         # 6. Build output paths
         from utils.paths import default_output_dir
         output_dir = Path(output_folder) if output_folder else default_output_dir()
@@ -209,7 +257,8 @@ class ReportPipeline:
                 sub_assembly=pptx_sub_assembly,
                 year=year,
                 quarter=quarter,
-                overview=overview
+                overview=overview,
+                raw_filename_stem=Path(raw_file).stem,
             )
             try:
                 os.startfile(str(pptx_path))

@@ -140,26 +140,40 @@ def build_flat_rows(summary_data, tray, cat_name, test_condition=""):
                     first_mc_row    = False
                     first_mode_row  = False
                 else:
-                    first_err_row = True
-                    for entry in err["failed_media"]:
-                        units       = ", ".join(entry["units"]) if entry["units"] else ""
-                        media_rate  = entry.get("rate", None)
-                        media_label = entry["media_name"]
-                        if media_rate is not None:
-                            media_label = f"{entry['media_name']} ({media_rate:.2f}/K)"
+                    if not err["failed_media"]:
+                        # No per-media breakdown — just show the error rate line
                         rows.append(_flat(
                             mt       if first_media_row else "",
                             mc       if first_mc_row    else "",
                             mode     if first_mode_row  else "",
                             spec_str if first_mode_row  else "",
                             result   if first_mode_row  else "",
-                            label    if first_err_row   else "",
-                            media_label, units
+                            label, "", ""
                         ))
                         first_media_row = False
                         first_mc_row    = False
                         first_mode_row  = False
-                        first_err_row   = False
+                    else:
+                        first_err_row = True
+                        for entry in err["failed_media"]:
+                            units       = ", ".join(entry["units"]) if entry["units"] else ""
+                            media_rate  = entry.get("rate", None)
+                            media_label = entry["media_name"]
+                            if media_rate is not None:
+                                media_label = f"{entry['media_name']} ({media_rate:.2f}/K)"
+                            rows.append(_flat(
+                                mt       if first_media_row else "",
+                                mc       if first_mc_row    else "",
+                                mode     if first_mode_row  else "",
+                                spec_str if first_mode_row  else "",
+                                result   if first_mode_row  else "",
+                                label    if first_err_row   else "",
+                                media_label, units
+                            ))
+                            first_media_row = False
+                            first_mc_row    = False
+                            first_mode_row  = False
+                            first_err_row   = False
 
     return rows
 
@@ -168,6 +182,14 @@ def _flat(media, media_cat, mode, spec, result, error, media_name, units):
     return {"media": media, "media_cat": media_cat, "mode": mode, "spec": spec,
             "result": result, "error": error, "media_name": media_name, "units": units,
             "cols": [media, media_cat, mode, spec, result, error, media_name, units]}
+
+
+def _build_remark(tray, media_type, media_cat, mode, error, rate, spec_str=None):
+    """Build a Key Takeaways remark: tray_mediatype_mediacat_mode_error_rate_(Spec: x/K)"""
+    parts = [p for p in [tray, media_type, media_cat, mode, error, f"{rate:.2f}/K"] if p]
+    if spec_str and spec_str != "N/A":
+        parts.append(f"(Spec: {spec_str}/K)")
+    return "_".join(parts)
 
 
 # ── Height estimation ─────────────────────────────────────────────────────────
@@ -325,25 +347,37 @@ def build_category_results(summary_data):
             if _RESULT_RANK.get(result, 0) > _RESULT_RANK.get(entry["result"], 0):
                 entry["result"] = result
 
-            ctx_parts  = [p for p in [tray, mode] if p]
-            ctx_prefix = "_".join(ctx_parts) + "_" if ctx_parts else ""
-
             if cat_has_spec:
-                if result == "FAIL":
-                    for err in errors:
-                        error  = err.get("error", "")
-                        rate   = err.get("rate", 0)
-                        remark = f"{ctx_prefix}{error}: {rate:.2f}/K (Spec: {spec_str}/K)"
+                if result == "FAIL" and errors:
+                    # errors[0] = total; errors[1:] = individual types.
+                    # Individual errors that exceeded spec have failed_media populated.
+                    spec_breaching = [e for e in errors[1:] if e.get("failed_media")]
+                    if spec_breaching:
+                        for err in spec_breaching:
+                            remark = _build_remark(
+                                tray, media_type, media_cat, mode,
+                                err.get("error", ""), err.get("rate", 0), spec_str
+                            )
+                            if remark not in entry["remarks"]:
+                                entry["remarks"].append(remark)
+                    else:
+                        # Total failed but no individual type breached — show the total
+                        err    = errors[0]
+                        remark = _build_remark(
+                            tray, media_type, media_cat, mode,
+                            err.get("error", ""), err.get("rate", 0), spec_str
+                        )
                         if remark not in entry["remarks"]:
                             entry["remarks"].append(remark)
             else:
                 if errors:
-                    for err in errors:
-                        error  = err.get("error", "")
-                        rate   = err.get("rate", 0)
-                        remark = f"{ctx_prefix}{error}: {rate:.2f}/K"
-                        if remark not in entry["remarks"]:
-                            entry["remarks"].append(remark)
+                    err    = errors[0]
+                    remark = _build_remark(
+                        tray, media_type, media_cat, mode,
+                        err.get("error", ""), err.get("rate", 0)
+                    )
+                    if remark not in entry["remarks"]:
+                        entry["remarks"].append(remark)
 
     result_groups = []
     for tc in sorted(tc_map.keys()):

@@ -184,6 +184,13 @@ class UnifiedPivotGenerator:
         extra = [denom_col] if denom_col != 'Tpages' and denom_col in self.processed_data.columns else []
         self.numeric_columns = ['Tpages'] + extra + self.error_output_columns
 
+        # Coerce all numeric columns to float so groupby().sum() never sees mixed types
+        for col in self.numeric_columns:
+            if col in self.processed_data.columns:
+                self.processed_data[col] = pd.to_numeric(
+                    self.processed_data[col], errors='coerce'
+                ).fillna(0)
+
     def _detect_printer_info(self):
         """Extract printer metadata (only called once)."""
         self.detected_main_printer = None

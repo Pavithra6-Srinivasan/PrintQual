@@ -6,7 +6,7 @@ class LLMService:
         self.model = "gemma4:26b"
         self.chat_history = []
 
-    def ask(self, system_prompt, user_message, timeout=200):
+    def ask(self, system_prompt, user_message, timeout=120):
 
         self.chat_history = self.chat_history[-5:]
         self.chat_history.append({"role": "user", "content": user_message})
@@ -20,15 +20,27 @@ class LLMService:
 
         conversation += "Assistant:"
 
-        response = requests.post(
-            self.url,
-            json={
-                "model": self.model,
-                "prompt": conversation,
-                "stream": False,
-            },
-            timeout=timeout
-        )
+        try:
+            response = requests.post(
+                self.url,
+                json={
+                    "model": self.model,
+                    "prompt": conversation,
+                    "stream": False,
+                },
+                timeout=timeout
+            )
+        except requests.exceptions.ConnectTimeout:
+            raise ConnectionError(
+                f"Cannot reach Ollama server at {self.url.split('/api')[0]}. "
+                "Make sure DESKTOP-TE4J5GB is on, Ollama is running, "
+                "and you are on the same network."
+            )
+        except requests.exceptions.ConnectionError:
+            raise ConnectionError(
+                f"Cannot connect to Ollama server at {self.url.split('/api')[0]}. "
+                "Make sure DESKTOP-TE4J5GB is on and Ollama is running."
+            )
 
         result = response.json()["response"].strip()
 
